@@ -46,6 +46,7 @@ from ui.gtab_doc import (
     default_event,
     seconds_to_tick,
 )
+from ui.settings import force_event_crc
 
 __all__ = ["GtabPage"]
 
@@ -125,11 +126,6 @@ class GtabPage:
             label="BPM",
             hint_text="120",
             on_change=self._on_bpm_change,
-        )
-        self._sw_crc = ft.Switch(
-            label="事件 CRC",
-            value=self.doc.event_crc_enabled,
-            on_change=self._on_crc_change,
         )
 
         # 元数据
@@ -233,7 +229,7 @@ class GtabPage:
                         run_spacing=8,
                     ),
                     ft.Row(
-                        [self._f_bpm, self._sw_crc],
+                        [self._f_bpm],
                         wrap=True,
                         spacing=8,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -408,7 +404,6 @@ class GtabPage:
         self._f_strings.value = str(self.doc.string_count)
         self._f_maxfret.value = str(self.doc.max_fret)
         self._f_bpm.value = f"{self.doc.bpm:g}"
-        self._sw_crc.value = self.doc.event_crc_enabled
         self._render_meta()
         self._render_events()
         self._render_timeline()
@@ -1091,10 +1086,6 @@ class GtabPage:
         # 节拍位置不受 BPM 影响，只更新统计信息（试听速度由 BPM 决定）
         self._touch()
 
-    def _on_crc_change(self, _event=None) -> None:
-        self.doc.event_crc_enabled = bool(self._sw_crc.value)
-        self._touch()
-
     def _on_beat_change(self, ev: EventRow, text: str) -> None:
         beats = _parse_beats(text)
         if beats is None:
@@ -1295,6 +1286,8 @@ class GtabPage:
             await self._on_save_as()
             return
         try:
+            # 本页已没有「事件 CRC」开关：按设置页的全局开关在写盘前强制一次
+            force_event_crc(self.doc)
             blob = self.doc.to_bytes()
             # to_bytes 会自动补 NoteOff，立刻刷新音符区（警告图标/音长）
             self._render_events()
@@ -1307,6 +1300,7 @@ class GtabPage:
 
     async def _on_save_as(self, _event=None) -> None:
         try:
+            force_event_crc(self.doc)
             blob = self.doc.to_bytes()
             # 即使随后取消另存为，模型里也已经补好了 NoteOff，界面要跟着更新
             self._render_events()
@@ -1363,6 +1357,9 @@ class GtabPage:
         return self._picker
 
     def _snack(self, message: str, error: bool = False) -> None:
+        # page 为 None 只出现在离线构建/测试时（和 GctPage / MidiPage 一致）
+        if self.page is None:
+            return
         self.page.show_dialog(
             ft.SnackBar(
                 content=ft.Text(message),

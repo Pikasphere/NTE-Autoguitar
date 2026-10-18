@@ -20,6 +20,8 @@ sys.path.insert(0, str(SRC))
 
 import flet as ft  # noqa: E402
 
+from branding import ICON_PATH  # noqa: E402
+
 from ui.chords import load_chord_names  # noqa: E402
 from ui.components import card  # noqa: E402
 from ui.gamepad_backend import ScheduleAction  # noqa: E402
@@ -30,6 +32,7 @@ from preview_gamepad_page import _last_page_document, _pose_wheel  # noqa: E402
 
 def main(page: ft.Page) -> None:
     page.title = "回放轮盘预览"
+    page.window.icon = str(ICON_PATH)
     page.padding = 0
     page.theme = ft.Theme(color_scheme_seed=ft.Colors.INDIGO)
     scale = float(os.environ.get("PREVIEW_SCALE", "1") or 1)

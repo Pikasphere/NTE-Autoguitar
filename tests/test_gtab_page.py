@@ -14,8 +14,12 @@ sys.path.insert(0, str(SRC))
 import flet as ft  # noqa: E402
 
 from gtab import EV_END, EV_STRING_NOTE_OFF, EV_STRING_NOTE_ON  # noqa: E402
+from ui import settings as settings_mod  # noqa: E402
 from ui.gtab_doc import EventRow, GtabDocument  # noqa: E402
 from ui.pages.gtab_page import GtabPage, _parse_beats  # noqa: E402
+
+# 测试固定跑「默认设置」：用户本机的 src/settings.json 不该影响结果
+settings_mod.set_settings(settings_mod.AppSettings(), persist=False)
 
 
 def _build_page() -> GtabPage:

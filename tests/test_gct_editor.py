@@ -38,6 +38,10 @@ from ui.chords import (  # noqa: E402
 from ui.components import LANE_HEIGHT, PX_PER_BEAT, RULER_HEIGHT  # noqa: E402
 from ui.gct_doc import ChordRow, GctDocument, demo_document  # noqa: E402
 from ui.pages.gct_page import GctPage  # noqa: E402
+from ui import settings as settings_mod  # noqa: E402
+
+# 测试固定跑「默认设置」：用户本机的 src/settings.json 不该影响 CRC / 投影行为
+settings_mod.set_settings(settings_mod.AppSettings(), persist=False)
 
 
 def _page() -> GctPage:
@@ -258,21 +262,6 @@ def test_tempo_row_roundtrip() -> None:
     blob = view.doc.to_bytes()
     again = GctDocument.from_bytes(blob)
     assert again.events[0].tempo_us == 1_000_000
-
-
-def test_crc_toggle_sets_flag_and_roundtrips() -> None:
-    view = _page()
-    view._sw_crc.value = True
-    view._on_crc_change()
-    assert view.doc.flags & 0x01
-
-    view._on_add_chord()
-    blob = view.doc.to_bytes()
-    assert GctDocument.from_bytes(blob).flags & 0x01
-
-    view._sw_crc.value = False
-    view._on_crc_change()
-    assert not (view.doc.flags & 0x01)
 
 
 def test_save_appends_end_and_sorts_events() -> None:

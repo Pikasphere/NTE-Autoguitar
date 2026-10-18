@@ -19,6 +19,7 @@ sys.path.insert(0, str(SRC))
 
 import flet as ft  # noqa: E402
 
+from branding import ICON_PATH  # noqa: E402
 from ui.audio_preview import LEAD_IN_SECONDS, render_wav, wav_duration  # noqa: E402
 from ui.gtab_doc import GtabDocument  # noqa: E402
 from ui.pages.gtab_page import GtabPage  # noqa: E402
@@ -42,6 +43,7 @@ def _pose_playback(view: GtabPage) -> None:
 
 def main(page: ft.Page) -> None:
     page.title = "GTAB 页面预览"
+    page.window.icon = str(ICON_PATH)
     page.padding = 0
     page.theme = ft.Theme(color_scheme_seed=ft.Colors.INDIGO)
     page.window.width = int(os.environ.get("PREVIEW_WIDTH", "1280"))

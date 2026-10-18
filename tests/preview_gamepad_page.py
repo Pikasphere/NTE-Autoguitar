@@ -1,4 +1,4 @@
-"""开发用：单独打开「手柄测试」页并载入示例谱，方便看界面。
+"""开发用：单独打开「手柄映射」页并载入示例谱，方便看界面。
 
 运行：``.venv\\Scripts\\python.exe tests/preview_gamepad_page.py``
 """
@@ -13,6 +13,8 @@ SRC = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(SRC))
 
 import flet as ft  # noqa: E402
+
+from branding import ICON_PATH  # noqa: E402
 
 from gct import DIR_DOWN, EV_CHORD_STRUM  # noqa: E402
 from ui.chords import load_chord_names  # noqa: E402
@@ -73,7 +75,8 @@ def _pose_mid_play(view: GamepadPage) -> None:
 
 
 def main(page: ft.Page) -> None:
-    page.title = "手柄测试预览"
+    page.title = "手柄映射预览"
+    page.window.icon = str(ICON_PATH)
     page.padding = 0
     page.theme = ft.Theme(color_scheme_seed=ft.Colors.INDIGO)
     # 默认按整窗 1280 截；设 PREVIEW_WIDTH=1144 可以模拟 App 里

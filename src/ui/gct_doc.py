@@ -335,6 +335,15 @@ class GctDocument:
             raise GctError("BPM 必须大于 0")
         self.default_tempo_us = max(1, round(60_000_000 / value))
 
+    @property
+    def event_crc_enabled(self) -> bool:
+        """flags 的 bit0（和 GtabDocument 同名，设置页的全局 CRC 靠它）。"""
+        return bool(self.flags & 0x01)
+
+    @event_crc_enabled.setter
+    def event_crc_enabled(self, value: bool) -> None:
+        self.flags = (self.flags | 0x01) if value else (self.flags & ~0x01)
+
     def counts(self) -> dict[str, int]:
         result: dict[str, int] = {}
         for ev in self.events:

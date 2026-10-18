@@ -1,4 +1,4 @@
-"""手柄测试页 —— 验证 gtab 谱面 → 虚拟手柄（vgamepad）的可行性。
+"""手柄映射页 —— 把 gtab / gct 谱面按规则映射成虚拟手柄（vgamepad）输入并回放。
 
 映射规则（已按需求实现，见 ``ui/gamepad_backend.py``）：
 
@@ -6,6 +6,9 @@
 - 品：左摇杆以「上」为 1 品、顺时针每 60° 一个品，一页 6 品；
 - 翻页：``右摇杆向左`` 下一页（7-12 品…），向右 上一页；
 - 第 5 页：六个方向都是空弦。
+
+**连接是手动的**：必须先点「连接手柄」，程序不会在播放时偷偷连上——
+免得用户在别的窗口里忽然多出一个 Xbox 360 手柄。
 
 页面左侧是「回放轮盘」：六个扇区显示当前页的品、六根弦显示正在按哪根；
 右侧是谱面回放，回放结束会给平均/最大时序误差，用来判断这条路是否可用于实际演奏。
@@ -47,8 +50,8 @@ __all__ = ["GamepadPage"]
 
 
 class GamepadPage:
-    TITLE = "手柄测试"
-    SUBTITLE = "gtab / gct 谱面 → 虚拟手柄（vgamepad）的可行性与时序"
+    TITLE = "手柄映射"
+    SUBTITLE = "gtab / gct 谱面 → 虚拟手柄（vgamepad）的映射与时序"
     DEMO_PATH = Path(__file__).resolve().parents[2] / "MusicList" / "gtabfile" / "demo.gtab"
     GCT_DEMO_PATH = (
         Path(__file__).resolve().parents[2] / "MusicList" / "gctfile" / "demo.gct"
@@ -72,7 +75,7 @@ class GamepadPage:
         self._log: deque[str] = deque(maxlen=5)
         self._wheel = ReplayWheel()
 
-        # 全局热键只在「手柄测试」页激活时注册，离开就注销
+        # 全局热键只在「手柄映射」页激活时注册，离开就注销
         self._active = False
         self._hotkeys = GlobalHotkeys(
             {
@@ -173,7 +176,12 @@ class GamepadPage:
                             self._status_text,
                             ft.Container(expand=True),
                             ft.Button("刷新", icon=ft.Icons.REFRESH, on_click=lambda e: self.refresh_status()),
-                            ft.Button("连接虚拟手柄", icon=ft.Icons.USB, on_click=self._on_connect),
+                            ft.Button(
+                                "连接手柄",
+                                icon=ft.Icons.USB,
+                                tooltip="手动连接（Xbox 360）。播放前必须先连上；程序不会自动连",
+                                on_click=self._on_connect,
+                            ),
                             ft.Button("断开", icon=ft.Icons.LINK_OFF, on_click=self._on_disconnect),
                         ],
                         spacing=8,
@@ -419,9 +427,9 @@ class GamepadPage:
             self._snack("先打开或载入一个 gtab 文件", error=True)
             return
         if not self.backend.connected:
-            self._on_connect()
-            if not self.backend.connected:
-                return
+            # 连接是手动的：不在播放时偷偷连手柄（免得别的窗口忽然多出一个 Xbox 手柄）
+            self._snack("虚拟手柄还没连接：先点上方「连接手柄」", error=True)
+            return
 
         try:
             gap_ms = int(self._gap_field.value or round(REPLUCK_GAP * 1000))
@@ -626,11 +634,12 @@ class GamepadPage:
         if self._playing or not self._has_playable():
             return
         if not self.backend.connected:
-            try:
-                self.backend.connect()
-            except Exception:  # noqa: BLE001  （热键路径不弹错误框，避免抢焦点）
-                return
-            self.refresh_status()
+            # 连接是手动的：热键路径也不偷偷连手柄（和 _on_play 一致）
+            self._progress_text.value = (
+                "虚拟手柄还没连接：先点「连接手柄」（热键不会自动连接）"
+            )
+            self.page.update()
+            return
         await self._on_play()
 
     def _on_hotkey_stop(self) -> None:

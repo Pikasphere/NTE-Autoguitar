@@ -19,6 +19,8 @@ sys.path.insert(0, str(SRC))
 
 import flet as ft  # noqa: E402
 
+from branding import ICON_PATH  # noqa: E402
+
 from ui.gct_doc import demo_document  # noqa: E402
 from ui.components import PX_PER_BEAT  # noqa: E402
 from ui.pages.gct_page import GctPage  # noqa: E402
@@ -26,6 +28,7 @@ from ui.pages.gct_page import GctPage  # noqa: E402
 
 def main(page: ft.Page) -> None:
     page.title = "GCT 页面预览"
+    page.window.icon = str(ICON_PATH)
     page.padding = 0
     page.theme = ft.Theme(color_scheme_seed=ft.Colors.INDIGO)
     page.window.width = int(os.environ.get("PREVIEW_WIDTH", "1280"))

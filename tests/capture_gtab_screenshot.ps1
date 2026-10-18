@@ -6,13 +6,15 @@
 #   pwsh -File tests/capture_gtab_screenshot.ps1 -Page gct       # GCT 编辑页 → docs/gct_page.png
 #   $env:PREVIEW_STATE='play'; pwsh -File tests/capture_gtab_screenshot.ps1 -Page gct
 #                                                              # → docs/gct_preview_playback.png（试听中）
+#   pwsh -File tests/capture_gtab_screenshot.ps1 -Page midi      # MIDI 映射页 → docs/midi_page.png
+#   pwsh -File tests/capture_gtab_screenshot.ps1 -Page settings  # 设置页 → docs/settings_page.png
 #   pwsh -File tests/capture_gtab_screenshot.ps1 -Page wheel     # 回放轮盘 → docs/replay_wheel.png
 #   $env:PREVIEW_SCORE='gct'; $env:PREVIEW_SCALE='1.6'  → docs/replay_wheel_gct.png（放大核对）
 #
 # 环境变量（预览脚本自己的开关，由这里继承给 pythonw）：
 #   PREVIEW_WIDTH / PREVIEW_HEIGHT  窗口尺寸；App 真实内容宽度是 1144
 #   PREVIEW_SCORE=gtab|gct          手柄页载入哪种谱面；gct 时默认存 docs/gamepad_gct.png
-#   PREVIEW_STATE=play              手柄页摆成「和弦扫到一半」/ GTAB、GCT 页摆成「试听中」
+#   PREVIEW_STATE=play              手柄页摆成「和弦扫到一半」/ GTAB、GCT、MIDI 页摆成播放/试听中
 #   PREVIEW_PAGE=4                  用第 4 页和弦（Cmaj9 / Am7/G，名字最长）当示例
 #   PREVIEW_SCALE=1.6               轮盘预览整体放大（配合 -Page wheel 看和弦名布局）
 #   -Out docs/xxx.png               自定义输出文件（不会覆盖默认那张）
@@ -24,8 +26,10 @@
 # 取窗口矩形用 DWMWA_EXTENDED_FRAME_BOUNDS（不是 GetWindowRect：后者含投影阴影，
 # 会把桌面图标/任务栏截进来）；Win11 的圆角会透明露底，所以截图前先用
 # DwmSetWindowAttribute 关掉圆角，再内缩 2px 去掉 1px 透明边框。
+# 最后：CopyFromScreen 截的是屏幕像素，用户开着浏览器/画图挡在上面就会截进来，
+# 所以截图期间把预览窗口临时置顶（SWP_NOSIZE|SWP_NOMOVE|SWP_SHOWWINDOW），截完即关。
 param(
-    [ValidateSet('gtab', 'gct', 'gamepad', 'wheel')]
+    [ValidateSet('gtab', 'gct', 'gamepad', 'midi', 'settings', 'wheel')]
     [string]$Page = 'gtab',
     [string]$Out = ''
 )
@@ -33,7 +37,7 @@ $ErrorActionPreference = 'Continue'
 $project = Split-Path -Parent $PSScriptRoot
 $pythonw = Join-Path $project '.venv\Scripts\pythonw.exe'
 if ($Page -eq 'gamepad') {
-    $title = '手柄测试预览'
+    $title = '手柄映射预览'
     $previewScript = 'tests\preview_gamepad_page.py'
     # PREVIEW_SCORE=gct（预览脚本的开关）时不要覆盖 gtab 那张，另存 docs/gamepad_gct.png；
     # 再叠 PREVIEW_STATE=play 时存 docs/gamepad_gct_play.png（别把待机那张覆盖成回放态）
@@ -64,10 +68,28 @@ if ($Page -eq 'gamepad') {
     } else {
         $outPng = 'docs\gct_page.png'
     }
+} elseif ($Page -eq 'midi') {
+    $title = 'MIDI 页面预览'
+    $previewScript = 'tests\preview_midi_page.py'
+    # PREVIEW_STATE=play：摆成「发送中」（游标 + 进度 + 跳过提示），另存一张，别覆盖待机图
+    if ($env:PREVIEW_STATE -eq 'play') {
+        $outPng = 'docs\midi_preview_playback.png'
+    } else {
+        $outPng = 'docs\midi_page.png'
+    }
+} elseif ($Page -eq 'settings') {
+    $title = '设置页面预览'
+    $previewScript = 'tests\preview_settings_page.py'
+    $outPng = 'docs\settings_page.png'
 } else {
     $title = 'GTAB 页面预览'
     $previewScript = 'tests\preview_gtab_page.py'
-    $outPng = 'docs\gtab_page.png'
+    # PREVIEW_STATE=play：摆成「试听中」（红游标 + 进度），另存一张，别把待机图覆盖成播放态
+    if ($env:PREVIEW_STATE -eq 'play') {
+        $outPng = 'docs\gtab_preview_playback.png'
+    } else {
+        $outPng = 'docs\gtab_page.png'
+    }
 }
 if ($Out) { $outPng = $Out }
 
@@ -89,6 +111,7 @@ public class WinCapShot {
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int n);
+  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
 }
@@ -141,6 +164,10 @@ if ($target -eq [IntPtr]::Zero) {
 } else {
     [void][WinCapShot]::ShowWindow($target, 9)
     [void][WinCapShot]::SetForegroundWindow($target)
+    # 用户可能正开着浏览器 / 画图挡在上面；CopyFromScreen 截的是屏幕像素，会把它们截进来。
+    # 截图期间临时置顶（HWND_TOPMOST=-1，SWP_NOSIZE|SWP_NOMOVE|SWP_SHOWWINDOW），
+    # 截完这个预览窗口本来就会被关掉，所以不用还原。
+    [void][WinCapShot]::SetWindowPos($target, [IntPtr](-1), 0, 0, 0, 0, 0x0001 -bor 0x0002 -bor 0x0040)
     Start-Sleep -Milliseconds 1500
     # Win11 的窗口四角是圆角，圆角处透明：直接截窗口矩形会把四个角连同桌面图标一起截进来。
     # 先关掉圆角（DWMWA_WINDOW_CORNER_PREFERENCE=33，DWMWCP_DONOTROUND=1）；Win10 上返回非 0，忽略。

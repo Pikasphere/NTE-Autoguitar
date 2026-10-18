@@ -289,6 +289,32 @@ def test_on_play_builds_chord_schedule_and_sets_units() -> None:
     assert view._playing is False
 
 
+def test_hotkey_play_does_not_auto_connect_gamepad() -> None:
+    """连接必须是手动的：热键路径也不许偷偷 connect()（用户 2026-10-18 要求）。"""
+
+    class NoConnectBackend(FakeBackend):
+        def __init__(self) -> None:
+            super().__init__()
+            self.connected = False
+            self.connect_calls = 0
+
+        def connect(self) -> None:
+            self.connect_calls += 1
+            super().connect()
+
+    page = FakePage()
+    view = GamepadPage(page)
+    backend = NoConnectBackend()
+    view.backend = backend
+    _load_gct(view, demo_document())
+
+    asyncio.run(view._play_from_hotkey())
+
+    assert backend.connect_calls == 0, "热键不能自动连接手柄"
+    assert view._playing is False
+    assert "连接手柄" in view._progress_text.value
+
+
 if __name__ == "__main__":
     tests = [value for name, value in sorted(globals().items()) if name.startswith("test_")]
     failures = 0

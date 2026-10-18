@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import flet as ft
 
+from branding import ICON_PATH
 from ui.pages.gamepad_page import GamepadPage
 from ui.pages.gct_page import GctPage
 from ui.pages.gtab_page import GtabPage
-from ui.pages.placeholder import PlaceholderPage
+from ui.pages.midi_page import MidiPage
+from ui.pages.settings_page import SettingsPage
 
 __all__ = ["APP_NAME", "main"]
 
@@ -28,6 +30,7 @@ WINDOW_MIN_HEIGHT = 640
 def main(page: ft.Page) -> None:
     """Flet 入口：搭好外壳，把 GTAB 页面作为其中一页挂上去。"""
     page.title = f"{APP_NAME} · {APP_SUBTITLE}"
+    page.window.icon = str(ICON_PATH)
     page.padding = 0
     page.theme_mode = ft.ThemeMode.SYSTEM
     page.theme = ft.Theme(color_scheme_seed=ft.Colors.INDIGO)
@@ -40,24 +43,30 @@ def main(page: ft.Page) -> None:
     gtab_page = GtabPage(page)
     gct_page = GctPage(page)
     gamepad_page = GamepadPage(page)
+    midi_page = MidiPage(page)
+    settings_page = SettingsPage(page)
+
+    def _apply_settings(_settings=None) -> None:
+        """设置页改完后，把新设置同步给受影响的页面。
+
+        现在只有 MIDI 页需要同步（八度投影）；gtab / gct 的「事件 CRC」不再有
+        单独开关，全局开关只在保存时由 ``force_event_crc`` 落地。
+        """
+        midi_page.apply_settings()
+
+    # 设置页只负责界面，真正的行为由这几个页面各自落地
+    settings_page.on_change = _apply_settings
 
     entries: list[tuple[str, object, ft.Control]] = [
         ("GTAB 编辑", ft.Icons.MUSIC_NOTE, gtab_page.build()),
         ("GCT 编辑", ft.Icons.LIBRARY_MUSIC, gct_page.build()),
-        ("手柄测试", ft.Icons.SPORTS_ESPORTS, gamepad_page.build()),
-        (
-            "MIDI 转换",
-            ft.Icons.GRAPHIC_EQ,
-            PlaceholderPage(
-                "MIDI 转换", "把 gtab 事件导出成 MIDI，或把 MIDI 读回来。"
-            ).build(),
-        ),
-        (
-            "设置",
-            ft.Icons.SETTINGS,
-            PlaceholderPage("设置", "音色、默认定弦之类的偏好设置。").build(),
-        ),
+        ("手柄映射", ft.Icons.SPORTS_ESPORTS, gamepad_page.build()),
+        ("MIDI 映射", ft.Icons.GRAPHIC_EQ, midi_page.build()),
+        ("设置", ft.Icons.SETTINGS, settings_page.build()),
     ]
+
+    # 启动时先按 settings.json 对齐一次（update=False：页面还没挂到 page 上）
+    midi_page.apply_settings(update=False)
 
     body = ft.Container(content=entries[0][2], expand=True)
 
@@ -76,9 +85,13 @@ def main(page: ft.Page) -> None:
         index = event.control.selected_index or 0
         # 只有停在本页时才注册全局热键 F9/F10；切走就注销，避免抢占游戏按键
         gamepad_page.set_active(index == 2)
+        midi_page.set_active(index == 3)
         if index != 2:
             # 离开手柄页时停止回放，避免虚拟手柄一直按着
             gamepad_page.stop()
+        if index != 3:
+            # 离开 MIDI 页时停止发送并按松所有键（否则会有键一直按着）
+            midi_page.stop()
         if index != 0:
             # 离开 GTAB 页时停掉试听，避免音频在后台继续响
             gtab_page.stop_preview()
@@ -88,7 +101,12 @@ def main(page: ft.Page) -> None:
         if index == 1:
             # 每次回到 GCT 页都重读 chord.json：外面改了指法/和弦名不用重启
             gct_page.reload_chords()
+        if index == 4:
+            # 进设置页时按磁盘上的值重画（外面改过 settings.json 也不会错位）
+            settings_page.refresh()
         body.content = entries[index][2]
+        # 切页时把当前设置再同步一次（MIDI 页的投影提示随开关变化）
+        _apply_settings()
         page.update()
 
     rail.on_change = _on_select

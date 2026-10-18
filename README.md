@@ -1,18 +1,25 @@
 # NTE Autoguitar
 
-基于 [Flet](https://flet.dev) 的吉他谱工具。目前有三个可用页面：**GTAB 编辑**（读取 / 编辑 / 写回 `.gtab` 文件，含试听）、**GCT 编辑**（和弦谱的读取 / 编辑 / 写回，含和弦指法核对）和**手柄测试**（`.gtab` / `.gct` 谱面 → 虚拟手柄的可行性与时序验证）。
+基于 [Flet](https://flet.dev) 的吉他谱工具。目前有五个页面：**GTAB 编辑**（读取 / 编辑 / 写回 `.gtab` 文件，含试听）、**GCT 编辑**（和弦谱的读取 / 编辑 / 写回，含和弦指法核对）、**手柄映射**（`.gtab` / `.gct` 谱面 → 虚拟手柄的可行性与时序验证）、**MIDI 映射**（MIDI 文件 → 键盘按键，按时间发进游戏）和 **设置**（两个全局开关 + 版本号：事件 CRC / MIDI 八度投影）。
 
 鼠标弹奏在游戏里不稳定（时序不可控、也容易丢音），所以本项目舍弃了键鼠方案，
-改用虚拟手柄（Xbox 360 控制器）来触发游戏里的音符。
+改用虚拟手柄（Xbox 360 控制器）来触发游戏里的音符；另有一条 **MIDI → 键盘** 的
+备用路径（`SendInput` + 扫描码），给只认键盘的游戏用。
+
+> **给接手的 AI**：先读 [`AGENTS.md`](AGENTS.md)。所有交接检查点都在
+> [`checkpoint/`](checkpoint/) 目录里（根目录不再放 `checkpoint-*.md`）；
+> 新写的检查点也请写进 `checkpoint/`。
 
 ![GTAB 编辑页](docs/gtab_page.png)
 
-![手柄测试页](docs/gamepad_page.png)
+![手柄映射页](docs/gamepad_page.png)
+
+![MIDI 映射页](docs/midi_page.png)
 
 ## 安装与运行
 
 要求 **Windows 10/11**（手柄页依赖 ViGEmBus 驱动，试听用 `winsound`，全局热键用
-`RegisterHotKey`，截图脚本用 DWM API）和 **Python 3.10+**（开发环境是 3.14.7）。
+`RegisterHotKey`，MIDI 页用 `SendInput`，截图脚本用 DWM API）和 **Python 3.10+**（开发环境是 3.14.7）。
 
 ```powershell
 git clone <本仓库地址> NTE-Autoguitar
@@ -43,29 +50,41 @@ run.bat                  普通权限启动（全局热键需要）
 run_admin.bat            管理员启动（游戏以管理员运行时用）
 requirements.txt         运行依赖（flet / flet-desktop / vgamepad）
 .gitignore               排除 .venv、__pycache__、开发交接笔记、临时 wav
+AGENTS.md                给接手 AI 的接手指引（文档地图 + 检查点位置 + 必守约束）
+checkpoint/              AI 交接检查点：所有 checkpoint-*.md 都在这里（本地保留，不进版本库）
 LICENSE                  MIT
 src/
   app.py                 主 GUI 外壳：左侧导航 + 页面容器
   example.py             用 GtabWriter 生成示例谱 demo.gtab 的小脚本
   gtab.py                gtab 二进制格式的底层读写
   gct.py                 gct（和弦谱）二进制格式的底层读写
+  midi.py                标准 MIDI 文件（SMF）的最小读写（只用标准库）
+  version.py             程序版本号（唯一来源，设置页显示）
+  branding.py            窗口图标路径（docs/AkaneRin.ico，主壳与预览脚本共用）
   chord.json             24 个和弦名（顺序 = 手柄上的位置）+ CHORDS_MAPPINGS 指法表
+  midi_keys.json         MIDI → 键盘的键位表（BASE_NOTE=52 + 36 个键，E3–D#6，运行时读取）
+  settings.json          两个全局开关（设置页写出来；本地偏好，已在 .gitignore）
   ui/
     gtab_doc.py          gtab 文档模型：解析 / 校验 / 序列化（无界面依赖）
     gct_doc.py           gct 文档模型：和弦事件 / 和弦表 / Tempo（无界面依赖）
+    midi_doc.py          MIDI 文档模型：音符配对 / 拍与秒换算（含 tempo 变化）
+    settings.py          全局设置模型：AppSettings / 读写 settings.json / force_event_crc
     chords.py            和弦名 → 第几页 + 第几个方向；指法表（-1 = 不发声，界面显示 x）
     audio_preview.py     试听合成：音符 → 16-bit WAV（只用标准库）
     chord_preview.py     和弦试听：gct 事件 → 扫弦/拨奏音符 → WAV（复用上面的合成器）
     gamepad_backend.py   虚拟手柄封装 + 谱面 → 按键排期（纯函数可测）
     gct_backend.py       和弦谱 → 多根弦的扫弦/拨奏排期（复用同一套时序）
+    keyboard_backend.py  MIDI → 键盘：键位表校验 / 按键排期 / SendInput 扫描码
     replay_view.py       手柄页左侧的「回放轮盘」：摇杆方向（品/和弦）+ 六根弦
     hotkeys.py           全局热键（F9 播放 / F10 停止，Windows RegisterHotKey）
     components.py        跨页面复用的小控件
     pages/
       gtab_page.py       GTAB 编辑页
       gct_page.py        GCT 编辑页（节拍轴 / 和弦事件 / Tempo / 和弦表）
-      gamepad_page.py    手柄测试页（回放 + 轮盘 + 时序）
-      placeholder.py     占位页
+      gamepad_page.py    手柄映射页（回放 + 轮盘 + 时序）
+      midi_page.py       MIDI 映射页（信息 / Capo / 键位表 / 节拍轴 / 发送）
+      settings_page.py   设置页（两个全局开关 + 版本号，改完立即写盘）
+      placeholder.py     占位页（目前没有页面在用，留给以后新增页）
 tests/
   test_gtab_doc.py       模型层测试（含音长 / 自动 NoteOff / 试听时间轴）
   test_gtab_page.py      页面构建测试（音符视图、音长编辑、孤立 NoteOff）
@@ -74,15 +93,19 @@ tests/
   test_replay_view.py    回放轮盘测试（扇区映射 / 状态推进 / 回放接线）
   test_gct_doc.py        gct 格式测试（读写往返 / CRC / Tempo / 缺 End）
   test_gct_mapping.py    和弦表 + gct → 扫弦排期测试
-  test_gct_page.py       手柄页 gct 回放测试（载入 / 计数 / 上扫顺序 / 复位）
+  test_gct_page.py       手柄页 gct 回放测试（载入 / 计数 / 上扫顺序 / 复位 / 热键不自动连接）
   test_gct_editor.py     GCT 编辑页 + chord.json 指法表测试（-1 → x / 事件编辑 / 节拍轴 / 试听）
   test_gct_file_ops.py   GCT 页文件操作测试（假 FilePicker：打开 / 保存 / 另存为 / 取消）
   test_hotkeys.py        全局热键测试（F24 注册 + 消息派发）
+  test_midi_doc.py       MIDI 测试（SMF 解析 / tempo 换算 / 键位表 / Capo / 排期 / 页面离线）
+  test_settings.py       设置测试（默认值 / JSON 往返容错 / 全局 CRC / 保存后重读 / 版本号 / 八度投影）
   preview_gtab_page.py   开发用：单独预览 GTAB 页
   preview_gct_page.py    开发用：单独预览 GCT 编辑页
-  preview_gamepad_page.py 开发用：单独预览手柄页（PREVIEW_SCORE=gct 看和弦谱）
+  preview_gamepad_page.py 开发用：单独预览手柄映射页（PREVIEW_SCORE=gct 看和弦谱）
+  preview_midi_page.py   开发用：单独预览 MIDI 映射页
+  preview_settings_page.py 开发用：单独预览设置页（PREVIEW_STATE=on 看两个开关都打开的样子）
   preview_replay_wheel.py 开发用：单独预览回放轮盘
-  capture_gtab_screenshot.ps1 开发用：重拍界面截图（DPI 感知）；-Page gtab|gct|gamepad|wheel，-Out 指定文件
+  capture_gtab_screenshot.ps1 开发用：重拍界面截图（DPI 感知）；-Page gtab|gct|gamepad|midi|settings|wheel，-Out 指定文件
 ```
 
 预览脚本的开关（截图脚本会继承环境变量）：
@@ -91,7 +114,8 @@ tests/
 |---|---|
 | `PREVIEW_WIDTH` / `PREVIEW_HEIGHT` | 窗口逻辑尺寸；App 内容宽度是 **1144**（1280 减导航栏 96 与分隔线） |
 | `PREVIEW_SCORE=gtab\|gct` | 手柄页载入单音谱还是和弦谱；gct 时默认存 `docs/gamepad_gct.png` |
-| `PREVIEW_STATE=play` | 手柄页摆成「和弦扫到一半」；GTAB 页摆成「试听中」（只摆状态，不播音） |
+| `PREVIEW_STATE=play` | 手柄页摆成「和弦扫到一半」；GTAB / GCT 页摆成「试听中」；MIDI 页摆成「发送中」（都只摆状态，不播音 / 不发按键） |
+| `PREVIEW_STATE=on` | 设置页把两个开关画成打开的样子（只改控件，不写 `settings.json`） |
 | `PREVIEW_PAGE=4` | 用最后一页的和弦（名字最长）当示例 |
 | `PREVIEW_SCALE=1.6` | 轮盘预览（`-Page wheel`）整体放大，核对和弦名会不会顶出外圈 |
 
@@ -251,7 +275,7 @@ gct 里**没有音长**，所以和弦试听（`src/ui/chord_preview.py`）用�
 
 左边是头部参数和和弦表，右边上面是节拍轴、下面是和弦事件列表：
 
-- **头部参数**：弦数、BPM（写进 `default_tempo_us`）、`事件 CRC` 开关（含义同 GTAB 页的同名开关）；
+- **头部参数**：弦数、BPM（写进 `default_tempo_us`）；
   事件位置统一用**拍**，时间基准固定 480 tick/拍（和 GTAB 页一样，界面不暴露）；
 - **和弦表**：`src/chord.json` 里的 24 个名字按「页 × 方向」排开（第 1 个 = 第 1 页正上方，
   顺时针，4 页 × 6 方向），后面跟 `CHORDS_MAPPINGS` 里的 **6 弦指法**：
@@ -312,17 +336,84 @@ gct 里**没有音长**，所以和弦试听（`src/ui/chord_preview.py`）用�
 `build_chord_schedule(doc, strum_gap=秒, hold=秒, aim_gap=秒)` 同样是纯函数，
 返回 `Schedule(actions, conflicts, hints)`，`unit_label="和弦"`。
 
+## MIDI 映射页（MIDI 文件 → 键盘按键）
+
+![MIDI 映射页](docs/midi_page.png)
+
+给**只认键盘**的游戏用：读标准 MIDI 文件（SMF），把音符按时间映射成按键，
+用 Windows `SendInput` 发**扫描码**（很多游戏不认单纯注入的虚拟键，认扫描码）。
+这一页是只读的——不编辑 MIDI，只决定「哪个音按哪个键、什么时候按」。
+
+- **键位表** `src/midi_keys.json`（运行时读取，改完点「重载键位」）：
+  `BASE_NOTE`（默认 52 = E3）+ 36 个键，从 `BASE_NOTE` 起**每个半音一个键**，
+  音域 **E3–D#6**（三个八度），按键盘三行排、每行 12 个半音：
+  - 底行 `a s d f g h j k l ; ' enter` = E3–D#4；
+  - 中行 `q w e r t y u i o p [ ]` = E4–D#5；
+  - 顶行 `1 2 3 4 5 6 7 8 9 0 - =` = E5–D#6。
+
+  `enter` 是唯一允许的**键名**（Enter 没有对应字符），其余必须是单个字符；
+  界面上缩写显示成 `Ent`。键位表里不允许出现需要 Shift 的键（如 `!`）；
+  页面上的键位表会把**当前谱面用到的键**高亮；
+- **超出键位窗口的音**默认**跳过并报出来**（不会静默丢）。**不自动移调**：
+  「转换设置」里是一个 **Capo**（0–12 品），N 品 = 整首升高 N 个半音，由你自己选，
+  载入新 MIDI 时回到 0；低于 E3 的音不用 Capo 就发不出去；
+  设置页打开「MIDI 音域超出后按八度投影」后改为：把每个超窗的音按 ±12 半音移进窗口再发
+  （音名会变、节奏不变），Capo 仍在投影之前叠加；
+- **点按 / 长按**：默认「点按」每个音只按 `100ms`（大多数键盘游戏在按下那一刻判定）；
+  关掉开关则按住到音尾（长按类游戏用）。**同一个键要再按时会先松开至少 `40ms`**，
+  否则游戏收不到第二次边沿；
+- **时序**：开场 `LEAD_IN=0.4s` 预备；排期与发送都在 `ui/keyboard_backend.py` 里，
+  `build_key_schedule(doc, transpose=, tap_notes=, tap_seconds=, project_octave=)` 是纯函数，
+  可直接单测（`transpose` 现在就是 Capo 的品位）；
+- **节拍轴**：三条泳道 = 键位表的三行（低 / 中 / 高八度），块上写要按的键
+  （灰块 = 超出窗口、会被跳过；打开投影后没有灰块，tooltip 里写「八度投影到 X」），
+  橙色竖线是 tempo 变化；播放时红色游标跟着走，长谱会自动横向跟随；
+- **权限**：`SendInput` 同样受 UIPI 限制，低权限进程（Agent / 沙盒 / CI）发不进权限更高的游戏。
+  页面顶部状态卡会用红字写明「低权限运行」；真机请用 `run.bat` / `run_admin.bat` 启动；
+- **示例**：点「示例 MIDI」优先读 `src/MusicList/midifile/demo.mid`，文件不存在就用内存里的
+  示例（音阶 + 两个三和弦，120 → 180 BPM 变速，用来核对 tempo 换算）；
+- 页面底部是**触发记录**：每次按键写出「第几拍 · 音名 → 键」，播完显示按键数与平均/最大误差。
+
+![MIDI 页发送中（红色游标 + 跳过提示）](docs/midi_preview_playback.png)
+
+> 与手柄页的区别：手柄页是「谱面 → 虚拟手柄」，MIDI 页是「MIDI → 键盘」，
+> 两条路径共用全局热键（F9 / F10）但互不影响；切页会停掉正在发送的按键。
+
+## 设置页
+
+![设置页](docs/settings_page.png)
+
+两个**全局**开关，改完立即生效并写盘到 `src/settings.json`（本地偏好，已在 `.gitignore`；
+文件不存在 / 坏 JSON / 字段类型不对都按默认值处理，不会让程序起不来）。「恢复默认」
+把两个都关掉。右上角显示版本号（`src/version.py` 的 `VERSION`，当前 **1.0.0-rc1**；
+rc = 发布候选，改一处版本号即可升到正式版）。窗口/任务栏图标是 `docs/AkaneRin.ico`
+（`src/branding.py` 给出路径，Windows 上由 `page.window.icon` 设置）。
+
+- **全局应用事件 CRC**（默认关）：打开后 GTAB / GCT 两个编辑页**保存时一律写入事件 CRC32**
+  （文件头 flags bit0）。两个编辑页已**没有**单独的「事件 CRC」开关——这里是唯一控制点；
+  关掉时保存不强制（打开的文件原本带 CRC 就继续带，新建或原本不带的不加）。
+  代码入口是 `ui/settings.py` 的 `force_event_crc(doc)`，两个页面的保存路径都会先调它。
+- **MIDI 音域超出后按八度投影**（默认关）：MIDI 映射页遇到键位窗口外的音时，
+  把该音整体移动若干个八度（±12 半音）直到落进窗口再发——**节奏不变、音名会变**；
+  关掉则保持默认行为（跳过 + 报出音名 + 节拍轴灰块）。
+  MIDI 页的 **Capo** 是手动设定的（0–12 品，载入新 MIDI 时回到 0），**不会自动移调**；
+  Capo 在投影之前叠加。
+
+两个开关都只是**存偏好**，不改变文件格式本身；设置页也不负责其它页面的其他参数。
+
 ## 测试用全局快捷键
 
-回放测试时游戏要保持焦点，切回本程序点「播放」会让游戏失焦。进入「手柄测试」页后，
-程序会注册 **系统级** 热键（Windows `RegisterHotKey`），游戏在前台也能触发：
+回放测试时游戏要保持焦点，切回本程序点「播放」会让游戏失焦。进入「手柄映射」或
+「MIDI 映射」页后，程序会注册 **系统级** 热键（Windows `RegisterHotKey`），
+游戏在前台也能触发：
 
 | 热键 | 动作 |
 |---|---|
-| `F9` | 播放当前谱面（不抢焦点；虚拟手柄没连接会先自动连接） |
-| `F10` | 停止回放并松开所有键（panic stop） |
+| `F9` | 播放当前谱面 / 开始发送按键（不抢焦点；**不会自动连接手柄**） |
+| `F10` | 停止回放 / 停止发送并松开所有键（panic stop） |
 
-- 热键只在「手柄测试」页激活时注册，切到别的页自动注销，避免长期占用游戏按键；
+- 热键只在「手柄映射」/「MIDI 映射」页激活时注册，切到别的页自动注销，避免长期占用游戏按键；
+  两页共用同一组 F9/F10，切页会先注销另一页再注册；
 - 键位在 `src/ui/hotkeys.py` 顶部的 `HOTKEY_PLAY` / `HOTKEY_STOP`；
 - 如果 `F9` 已被别的软件注册为全局热键，页面会红字提示占用；
   游戏自己用 F9/F10 的话，改上面两个常量即可；
@@ -346,9 +437,11 @@ gct 里**没有音长**，所以和弦试听（`src/ui/chord_preview.py`）用�
 .venv\Scripts\python.exe tests\test_gct_editor.py
 .venv\Scripts\python.exe tests\test_gct_file_ops.py
 .venv\Scripts\python.exe tests\test_hotkeys.py
+.venv\Scripts\python.exe tests\test_midi_doc.py
+.venv\Scripts\python.exe tests\test_settings.py
 ```
 
-共 155 项（18 / 10 / 14 / 23 / 13 / 11 / 16 / 8 / 31 / 7 / 4）。
+共 214 项（18 / 10 / 14 / 23 / 13 / 11 / 16 / 9 / 30 / 7 / 4 / 29 / 30）。
 
 ## 排错
 
@@ -363,7 +456,7 @@ Windows 的 UIPI 不允许低权限（Low integrity）进程接收更高权限�
 - `run.bat` — 普通权限启动（游戏也以普通权限运行时用这个）；
 - `run_admin.bat` — 以管理员启动（游戏本身是管理员运行时用这个，会弹 UAC）。
 
-「手柄测试」页的热键提示会红字显示当前是否为低权限。也可以用 PowerShell 确认：
+「手柄映射」/「MIDI 映射」页的热键提示会红字显示当前是否为低权限。也可以用 PowerShell 确认：
 
 ```powershell
 whoami /groups | Select-String 'S-1-16-'

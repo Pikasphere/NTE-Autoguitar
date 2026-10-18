@@ -21,8 +21,12 @@ from types import SimpleNamespace
 SRC = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(SRC))
 
+from ui import settings as settings_mod  # noqa: E402
 from ui.gct_doc import GctDocument  # noqa: E402
 from ui.pages.gct_page import GctPage  # noqa: E402
+
+# 测试固定跑「默认设置」：用户本机的 src/settings.json 不该影响保存出的字节
+settings_mod.set_settings(settings_mod.AppSettings(), persist=False)
 
 # 不用 tempfile：受限环境里 %TEMP% 和「新建的临时子目录」可能写不进去
 TESTS = Path(__file__).resolve().parent

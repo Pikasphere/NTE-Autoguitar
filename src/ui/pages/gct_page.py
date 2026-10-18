@@ -47,6 +47,7 @@ from ui.chords import (
 )
 from ui.components import BEATS_PER_BAR, LANE_HEIGHT, MUTED, PX_PER_BEAT, RULER_HEIGHT, card
 from ui.gct_doc import ChordRow, GctDocument, demo_document, seconds_to_tick
+from ui.settings import force_event_crc
 
 __all__ = ["GctPage"]
 
@@ -172,12 +173,6 @@ class GctPage:
             input_filter=ft.InputFilter(allow=True, regex_string=_BEAT_FILTER),
             on_change=self._on_bpm_change,
         )
-        self._sw_crc = ft.Switch(
-            label="事件 CRC",
-            value=self.doc.flags & 0x01 == 0x01,
-            tooltip="打开后每个事件后面多 4 字节 CRC32；读取方必须支持这个 flag。",
-            on_change=self._on_crc_change,
-        )
 
         self._chord_table_column = ft.Column(spacing=2)
         self._chord_table_warning = ft.Text("", size=11, color=ft.Colors.ORANGE_300, visible=False)
@@ -250,7 +245,7 @@ class GctPage:
             ft.Column(
                 [
                     ft.Row(
-                        [self._f_strings, self._f_bpm, self._sw_crc],
+                        [self._f_strings, self._f_bpm],
                         wrap=True,
                         spacing=8,
                         run_spacing=8,
@@ -423,7 +418,6 @@ class GctPage:
     def _render_header_fields(self) -> None:
         self._f_strings.value = str(self.doc.string_count)
         self._f_bpm.value = f"{self.doc.bpm:.1f}".rstrip("0").rstrip(".")
-        self._sw_crc.value = bool(self.doc.flags & 0x01)
 
     def _render_chord_table(self) -> None:
         names = self.chord_table.names
@@ -1298,13 +1292,6 @@ class GctPage:
                 ev.data = ev.chord_id.to_bytes(2, "little") + bytes([string])
         self._touch()
 
-    def _on_crc_change(self, _event=None) -> None:
-        if bool(self._sw_crc.value):
-            self.doc.flags |= 0x01
-        else:
-            self.doc.flags &= ~0x01
-        self._touch()
-
     def _on_reload_chords(self, _event=None) -> None:
         self.reload_chords()
         if self.chord_error:
@@ -1367,6 +1354,8 @@ class GctPage:
             await self._on_save_as()
             return
         try:
+            # 本页已没有「事件 CRC」开关：按设置页的全局开关在写盘前强制一次
+            force_event_crc(self.doc)
             blob = self.doc.to_bytes()
             self._render_events()
             self.path.write_bytes(blob)
@@ -1378,6 +1367,7 @@ class GctPage:
 
     async def _on_save_as(self, _event=None) -> None:
         try:
+            force_event_crc(self.doc)
             blob = self.doc.to_bytes()
             self._render_events()
         except GctError as exc:

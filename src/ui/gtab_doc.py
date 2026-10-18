@@ -643,7 +643,7 @@ def tick_to_seconds(doc: GtabDocument, tick: int) -> float:
     """把 tick 换算成播放用的真实秒数（会把 Tempo 事件算进去）。
 
     界面上的轴用节拍，只有“播放/回放”需要真实时间，所以这个函数只在
-    手柄测试页这类需要按时间触发的场景用。
+    手柄映射页这类需要按时间触发的场景用。
     """
     target = max(0, int(tick))
     seconds = 0.0
