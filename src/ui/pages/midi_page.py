@@ -59,6 +59,12 @@ _TIMELINE_HEIGHT = RULER_HEIGHT + len(_LANES) * LANE_HEIGHT
 #: Capo 上限：12 品 = 一个八度。再高就该直接改键位表了。
 CAPO_MAX = 12
 
+#: 播放游标刷新间隔（秒）。**没有音符的区间也要按时间走**，所以等待下一个
+#: 按键时也按这个节奏刷新，而不是只在发送按键之后刷一次。
+PLAYHEAD_REFRESH = 0.06
+#: 曲尾推进的步进（秒）：最后一个按键之后让游标继续走到整首曲子的长度。
+TAIL_STEP = 0.03
+
 
 class MidiPage:
     TITLE = "MIDI 映射"
@@ -79,6 +85,8 @@ class MidiPage:
 
         self.backend = KeyboardBackend()
         self._playing = False
+        # 每次播放的编号：stop() / 重新播放都会 +1，旧 _play_loop 看到编号变了就退出
+        self._play_token = 0
         self._pressed = 0
         self._total_notes = 0
         self._drifts: list[float] = []
@@ -710,6 +718,7 @@ class MidiPage:
             return
 
         self._playing = True
+        self._play_token += 1
         self._pressed = 0
         self._total_notes = schedule.note_count
         self._drifts.clear()
@@ -736,28 +745,27 @@ class MidiPage:
             self._warning.visible = False
         self._progress.value = f"发送中… 0/{self._total_notes} 个按键"
         self._update()
-        self.page.run_task(self._play_loop, schedule.actions)
+        self.page.run_task(self._play_loop, schedule.actions, self._play_token)
 
-    async def _play_loop(self, actions: list[KeyAction]) -> None:
+    async def _play_loop(self, actions: list[KeyAction], token: int = 0) -> None:
+        """按时间发按键；**红线跟着真实时间走**，没有音符的区间也不例外。
+
+        ``token`` 是本次播放的编号：``stop()`` / 重新播放会把它加一，旧循环
+        看到编号变了就退出，避免两次播放叠在一起。
+        """
         loop = asyncio.get_running_loop()
+        if not token:
+            token = self._play_token
         start = loop.time()
+        duration = self.doc.duration_seconds if self.doc is not None else 0.0
         last_ui = 0.0
         try:
             for action in actions:
-                if not self._playing:
+                if not self._still_playing(token):
                     break
                 due = start + action.time
-                while self._playing:
-                    remaining = due - loop.time()
-                    if remaining <= 0:
-                        break
-                    if remaining > 0.004:
-                        await asyncio.sleep(min(remaining - 0.003, 0.01))
-                    else:
-                        while loop.time() < due:
-                            pass
-                        break
-                if not self._playing:
+                await self._wait_until(due, start, token, loop)
+                if not self._still_playing(token):
                     break
 
                 drift_ms = (loop.time() - due) * 1000.0
@@ -773,28 +781,91 @@ class MidiPage:
                     self._refresh_progress()
 
                 now = loop.time()
-                if now - last_ui >= 0.06:
+                if now - last_ui >= PLAYHEAD_REFRESH:
                     last_ui = now
-                    self._set_playhead_seconds(max(0.0, now - start - LEAD_IN))
-                    await self._follow_playhead()
-                    self._refresh_progress()
-                    self._update()
+                    await self._refresh_playhead(start, token, loop)
+
+            # 尾巴：最后一个按键之后（以及静音收尾）红线也要走到曲尾
+            if self._still_playing(token):
+                await self._play_tail(start, duration, token, loop)
         except Exception as exc:  # noqa: BLE001
             self._snack(f"发送中断：{exc}", error=True)
         finally:
-            self._playing = False
-            try:
-                self.backend.release_all()
-            except Exception:  # noqa: BLE001
-                pass
-            self._playhead.visible = False
-            self._refresh_progress(finished=True)
+            # 已经被 stop() / 新一次播放接管时，别再动播放状态（否则会把新播放掐掉）
+            if token == self._play_token:
+                self._playing = False
+                try:
+                    self.backend.release_all()
+                except Exception:  # noqa: BLE001
+                    pass
+                self._playhead.visible = False
+                self._refresh_progress(finished=True)
+                self._update()
+
+    def _still_playing(self, token: int) -> bool:
+        """这次播放是否还该继续（用户没按停止、也没开始新的一次播放）。"""
+        return self._playing and token == self._play_token
+
+    async def _refresh_playhead(
+        self, start: float, token: int, loop, follow: bool = True
+    ) -> None:
+        """把红线推到「已经过了多少拍」，并刷新界面。"""
+        if not self._still_playing(token):
+            return
+        self._set_playhead_seconds(max(0.0, loop.time() - start - LEAD_IN))
+        if follow:
+            await self._follow_playhead()
+        self._refresh_progress()
+        self._update()
+
+    async def _wait_until(self, due: float, start: float, token: int, loop) -> None:
+        """等到 ``due``；等待期间按 ``PLAYHEAD_REFRESH`` 推进红线（静音区间也要走）。"""
+        last_ui = loop.time()
+        while self._still_playing(token):
+            remaining = due - loop.time()
+            if remaining <= 0:
+                return
+            if remaining > 0.004:
+                await asyncio.sleep(min(remaining - 0.003, 0.01))
+            else:
+                # 最后 4ms 自旋，保证按键准时
+                while loop.time() < due:
+                    pass
+                return
+            now = loop.time()
+            if now - last_ui >= PLAYHEAD_REFRESH:
+                last_ui = now
+                # 滚动动画要 120ms；离下一个按键太近时先别滚，免得按键迟到
+                await self._refresh_playhead(
+                    start, token, loop, follow=(due - now) > 0.25
+                )
+
+    async def _play_tail(
+        self, start: float, duration: float, token: int, loop
+    ) -> None:
+        """最后一个按键之后继续把红线推到 ``duration``；按停止会立刻退出。"""
+        if duration <= 0:
+            return
+        last_ui = 0.0
+        while self._still_playing(token):
+            if loop.time() - start - LEAD_IN >= duration:
+                break
+            await asyncio.sleep(TAIL_STEP)
+            now = loop.time()
+            if now - last_ui >= PLAYHEAD_REFRESH:
+                last_ui = now
+                await self._refresh_playhead(start, token, loop)
+        if self._still_playing(token):
+            # 让游标停在曲尾（随后 finally 会隐藏它）
+            self._set_playhead_seconds(duration)
             self._update()
 
     def stop(self) -> None:
         """停止发送并松开所有键（切页时也会调）。"""
         was_playing = self._playing
         self._playing = False
+        # 让还在跑的 _play_loop 立刻作废（包括它正在走的曲尾）
+        self._play_token += 1
         try:
             self.backend.release_all()
         except Exception:  # noqa: BLE001

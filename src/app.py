@@ -14,6 +14,7 @@ from ui.pages.gamepad_page import GamepadPage
 from ui.pages.gct_page import GctPage
 from ui.pages.gtab_page import GtabPage
 from ui.pages.midi_page import MidiPage
+from ui.pages.midi_to_gtab_page import MidiToGtabPage
 from ui.pages.settings_page import SettingsPage
 
 __all__ = ["APP_NAME", "main"]
@@ -44,6 +45,7 @@ def main(page: ft.Page) -> None:
     gct_page = GctPage(page)
     gamepad_page = GamepadPage(page)
     midi_page = MidiPage(page)
+    midi_to_gtab_page = MidiToGtabPage(page)
     settings_page = SettingsPage(page)
 
     def _apply_settings(_settings=None) -> None:
@@ -62,6 +64,7 @@ def main(page: ft.Page) -> None:
         ("GCT 编辑", ft.Icons.LIBRARY_MUSIC, gct_page.build()),
         ("手柄映射", ft.Icons.SPORTS_ESPORTS, gamepad_page.build()),
         ("MIDI 映射", ft.Icons.GRAPHIC_EQ, midi_page.build()),
+        ("MIDI→GTAB", ft.Icons.SWAP_HORIZ, midi_to_gtab_page.build()),
         ("设置", ft.Icons.SETTINGS, settings_page.build()),
     ]
 
@@ -81,8 +84,8 @@ def main(page: ft.Page) -> None:
         ],
     )
 
-    def _on_select(event) -> None:
-        index = event.control.selected_index or 0
+    def _show(index: int) -> None:
+        rail.selected_index = index
         # 只有停在本页时才注册全局热键 F9/F10；切走就注销，避免抢占游戏按键
         gamepad_page.set_active(index == 2)
         midi_page.set_active(index == 3)
@@ -101,14 +104,23 @@ def main(page: ft.Page) -> None:
         if index == 1:
             # 每次回到 GCT 页都重读 chord.json：外面改了指法/和弦名不用重启
             gct_page.reload_chords()
-        if index == 4:
-            # 进设置页时按磁盘上的值重画（外面改过 settings.json 也不会错位）
+        if index == len(entries) - 1:
+            # 设置页永远在最后；进页时按磁盘上的值重画（外面改过 settings.json 也不会错位）
             settings_page.refresh()
         body.content = entries[index][2]
         # 切页时把当前设置再同步一次（MIDI 页的投影提示随开关变化）
         _apply_settings()
         page.update()
 
+    def _on_select(event) -> None:
+        _show(event.control.selected_index or 0)
+
+    def _use_converted(doc) -> None:
+        """MIDI→GTAB 页的「送到 GTAB 编辑页」：只换内存文档，不写盘。"""
+        gtab_page.load_document(doc)
+        _show(0)
+
+    midi_to_gtab_page.on_send = _use_converted
     rail.on_change = _on_select
 
     page.add(

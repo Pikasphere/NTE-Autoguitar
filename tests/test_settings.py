@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -27,6 +28,7 @@ from types import SimpleNamespace
 SRC = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(SRC))
 
+import paths  # noqa: E402
 from ui import settings as settings_mod  # noqa: E402
 from ui.gct_doc import GctDocument, demo_document  # noqa: E402
 from ui.gtab_doc import GtabDocument  # noqa: E402
@@ -250,6 +252,54 @@ def test_force_event_crc_none_and_duck_typed() -> None:
         assert force_event_crc(object()) is False
     finally:
         _defaults()
+
+
+# ---------------------------------------------------------------- 打包路径
+
+# 打包（PyInstaller / flet pack）后资源根变成 _MEIPASS，settings.json 必须改存
+# %APPDATA%（单文件 exe 的 _MEIPASS 退出即删）。这里固定路径规则，防止有人改回数
+# Path(__file__).parents[n] 的写法。
+
+def test_source_run_paths() -> None:
+    assert paths.is_frozen() is False
+    assert paths.bundle_root().name == "src"
+    assert paths.project_root() == paths.bundle_root().parent
+    assert paths.settings_path() == paths.bundle_root() / "settings.json"
+    assert paths.bundle_root().joinpath("chord.json").is_file()
+    assert paths.bundle_root().joinpath("midi_keys.json").is_file()
+
+
+def test_frozen_settings_path_uses_appdata() -> None:
+    old_frozen = getattr(sys, "frozen", None)
+    old_meipass = getattr(sys, "_MEIPASS", None)
+    fake_bundle = HERE / "_fake_bundle"
+    sys.frozen = True
+    sys._MEIPASS = str(fake_bundle)
+    try:
+        base = Path("C:/Users/someone/AppData/Roaming")
+        assert paths.bundle_root() == fake_bundle.resolve()
+        assert paths.project_root() == fake_bundle.resolve()
+        assert paths.user_data_dir(base) == base / "NTE-Autoguitar"
+        assert paths.settings_path(base) == base / "NTE-Autoguitar" / "settings.json"
+    finally:
+        if old_frozen is None:
+            del sys.frozen
+        else:
+            sys.frozen = old_frozen
+        if old_meipass is None:
+            del sys._MEIPASS
+        else:
+            sys._MEIPASS = old_meipass
+
+
+def test_save_settings_creates_parent_directory() -> None:
+    folder = HERE / "_settings_nested"
+    target = folder / "settings.json"
+    try:
+        save_settings(AppSettings(global_event_crc=True), target)
+        assert load_settings(target).global_event_crc is True
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
 
 
 # ---------------------------------------------------------------- 编辑页不再有 CRC 开关
@@ -540,7 +590,7 @@ class FakeShellPage:
 
 
 def test_app_shell_builds_with_real_settings_page() -> None:
-    """主壳第 5 页必须是真的设置页（不再是 PlaceholderPage）。"""
+    """主壳最后一页必须是真的设置页（不再是 PlaceholderPage）。"""
     _defaults()
     try:
         import app
@@ -550,7 +600,14 @@ def test_app_shell_builds_with_real_settings_page() -> None:
         assert page.controls, "主壳应该往 page 里放一个 Row"
         rail = page.controls[0].controls[0]
         labels = [destination.label for destination in rail.destinations]
-        assert labels == ["GTAB 编辑", "GCT 编辑", "手柄映射", "MIDI 映射", "设置"]
+        assert labels == [
+            "GTAB 编辑",
+            "GCT 编辑",
+            "手柄映射",
+            "MIDI 映射",
+            "MIDI→GTAB",
+            "设置",
+        ]
         assert not hasattr(app, "PlaceholderPage"), "设置页已替换成真实页面"
         # 窗口图标：主壳启动时就要设上（Windows 读 .ico）
         assert str(page.window.icon).endswith("AkaneRin.ico")

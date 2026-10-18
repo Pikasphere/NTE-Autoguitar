@@ -1244,6 +1244,18 @@ class GtabPage:
 
     # ------------------------------------------------------------------ 文件操作
 
+    def load_document(
+        self, doc: GtabDocument, path: Path | str | None = None
+    ) -> None:
+        """外部把一份文档送进本页（MIDI→GTAB 页的「送到 GTAB 编辑页」）。
+
+        只换内存文档，不写盘；``path=None`` 表示还没有磁盘文件，保存时走「另存为」。
+        """
+        self.doc = doc
+        self.path = Path(path) if path is not None else None
+        self._render_all()
+        self._set_dirty(self.path is None)
+
     async def _on_open(self, _event=None) -> None:
         picker = self._ensure_picker()
         try:

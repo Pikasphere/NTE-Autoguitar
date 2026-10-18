@@ -7,6 +7,7 @@
 #   $env:PREVIEW_STATE='play'; pwsh -File tests/capture_gtab_screenshot.ps1 -Page gct
 #                                                              # → docs/gct_preview_playback.png（试听中）
 #   pwsh -File tests/capture_gtab_screenshot.ps1 -Page midi      # MIDI 映射页 → docs/midi_page.png
+#   pwsh -File tests/capture_gtab_screenshot.ps1 -Page midi2gtab # MIDI→GTAB 页 → docs/midi_to_gtab_page.png
 #   pwsh -File tests/capture_gtab_screenshot.ps1 -Page settings  # 设置页 → docs/settings_page.png
 #   pwsh -File tests/capture_gtab_screenshot.ps1 -Page wheel     # 回放轮盘 → docs/replay_wheel.png
 #   $env:PREVIEW_SCORE='gct'; $env:PREVIEW_SCALE='1.6'  → docs/replay_wheel_gct.png（放大核对）
@@ -29,7 +30,7 @@
 # 最后：CopyFromScreen 截的是屏幕像素，用户开着浏览器/画图挡在上面就会截进来，
 # 所以截图期间把预览窗口临时置顶（SWP_NOSIZE|SWP_NOMOVE|SWP_SHOWWINDOW），截完即关。
 param(
-    [ValidateSet('gtab', 'gct', 'gamepad', 'midi', 'settings', 'wheel')]
+    [ValidateSet('gtab', 'gct', 'gamepad', 'midi', 'midi2gtab', 'settings', 'wheel')]
     [string]$Page = 'gtab',
     [string]$Out = ''
 )
@@ -77,6 +78,10 @@ if ($Page -eq 'gamepad') {
     } else {
         $outPng = 'docs\midi_page.png'
     }
+} elseif ($Page -eq 'midi2gtab') {
+    $title = 'MIDI→GTAB 预览'
+    $previewScript = 'tests\preview_midi_to_gtab_page.py'
+    $outPng = 'docs\midi_to_gtab_page.png'
 } elseif ($Page -eq 'settings') {
     $title = '设置页面预览'
     $previewScript = 'tests\preview_settings_page.py'

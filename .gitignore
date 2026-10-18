@@ -9,10 +9,16 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 
+# ── 打包产物（flet pack / PyInstaller）──────────────────
+build/
+dist/
+*.spec
+
 # ── 开发交接笔记（内部状态，不公开；文件保留在本地）─────
 # 所有检查点现在都在 checkpoint/ 目录（见 AGENTS.md）；根目录这份规则留给老文件。
 checkpoint-*.md
 checkpoint/
+AGENTS.md
 
 # ── IDE / 系统 ──────────────────────────────────────────
 .idea/
@@ -23,7 +29,10 @@ Thumbs.db
 # ── 本地偏好设置（设置页写出来的，不进版本库）───────────
 src/settings.json
 tests/_settings.test.json
+src/MusicList/
 
 # ── 运行时临时文件 ──────────────────────────────────────
 # 试听时写到系统临时目录的 wav（万一写进仓库也忽略掉）
 *.wav
+# 本机 pip 临时目录（沙箱里装包留下的，可能删不掉，先忽略）
+.piptmp/

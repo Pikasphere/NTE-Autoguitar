@@ -1,14 +1,10 @@
 # NTE Autoguitar
 
-基于 [Flet](https://flet.dev) 的吉他谱工具。目前有五个页面：**GTAB 编辑**（读取 / 编辑 / 写回 `.gtab` 文件，含试听）、**GCT 编辑**（和弦谱的读取 / 编辑 / 写回，含和弦指法核对）、**手柄映射**（`.gtab` / `.gct` 谱面 → 虚拟手柄的可行性与时序验证）、**MIDI 映射**（MIDI 文件 → 键盘按键，按时间发进游戏）和 **设置**（两个全局开关 + 版本号：事件 CRC / MIDI 八度投影）。
+基于 [Flet](https://flet.dev) 的吉他谱工具。目前有六个页面：**GTAB 编辑**（读取 / 编辑 / 写回 `.gtab` 文件，含试听）、**GCT 编辑**（和弦谱的读取 / 编辑 / 写回，含和弦指法核对）、**手柄映射**（`.gtab` / `.gct` 谱面 → 虚拟手柄的可行性与时序验证）、**MIDI 映射**（MIDI 文件 → 键盘按键，按时间发进游戏）、**MIDI→GTAB**（把 MIDI 排成手柄能弹的 `.gtab`）和 **设置**（两个全局开关 + 版本号：事件 CRC / MIDI 八度投影）。
 
 鼠标弹奏在游戏里不稳定（时序不可控、也容易丢音），所以本项目舍弃了键鼠方案，
 改用虚拟手柄（Xbox 360 控制器）来触发游戏里的音符；另有一条 **MIDI → 键盘** 的
 备用路径（`SendInput` + 扫描码），给只认键盘的游戏用。
-
-> **给接手的 AI**：先读 [`AGENTS.md`](AGENTS.md)。所有交接检查点都在
-> [`checkpoint/`](checkpoint/) 目录里（根目录不再放 `checkpoint-*.md`）；
-> 新写的检查点也请写进 `checkpoint/`。
 
 ![GTAB 编辑页](docs/gtab_page.png)
 
@@ -48,6 +44,7 @@ python -m venv .venv
 main.py                  入口，只负责启动
 run.bat                  普通权限启动（全局热键需要）
 run_admin.bat            管理员启动（游戏以管理员运行时用）
+build_release.ps1        打包 exe（flet pack / PyInstaller；资源约定见 src/paths.py）
 requirements.txt         运行依赖（flet / flet-desktop / vgamepad）
 .gitignore               排除 .venv、__pycache__、开发交接笔记、临时 wav
 AGENTS.md                给接手 AI 的接手指引（文档地图 + 检查点位置 + 必守约束）
@@ -61,6 +58,7 @@ src/
   midi.py                标准 MIDI 文件（SMF）的最小读写（只用标准库）
   version.py             程序版本号（唯一来源，设置页显示）
   branding.py            窗口图标路径（docs/AkaneRin.ico，主壳与预览脚本共用）
+  paths.py               运行路径：源码运行 vs 打包运行（资源根 / %APPDATA% 设置）
   chord.json             24 个和弦名（顺序 = 手柄上的位置）+ CHORDS_MAPPINGS 指法表
   midi_keys.json         MIDI → 键盘的键位表（BASE_NOTE=52 + 36 个键，E3–D#6，运行时读取）
   settings.json          两个全局开关（设置页写出来；本地偏好，已在 .gitignore）
@@ -68,6 +66,7 @@ src/
     gtab_doc.py          gtab 文档模型：解析 / 校验 / 序列化（无界面依赖）
     gct_doc.py           gct 文档模型：和弦事件 / 和弦表 / Tempo（无界面依赖）
     midi_doc.py          MIDI 文档模型：音符配对 / 拍与秒换算（含 tempo 变化）
+    midi_to_gtab.py      MIDI → GTAB 转换：定弦 / 页面 / tempo / 同键重叠（纯逻辑）
     settings.py          全局设置模型：AppSettings / 读写 settings.json / force_event_crc
     chords.py            和弦名 → 第几页 + 第几个方向；指法表（-1 = 不发声，界面显示 x）
     audio_preview.py     试听合成：音符 → 16-bit WAV（只用标准库）
@@ -83,6 +82,7 @@ src/
       gct_page.py        GCT 编辑页（节拍轴 / 和弦事件 / Tempo / 和弦表）
       gamepad_page.py    手柄映射页（回放 + 轮盘 + 时序）
       midi_page.py       MIDI 映射页（信息 / Capo / 键位表 / 节拍轴 / 发送）
+      midi_to_gtab_page.py  MIDI→GTAB 页（载入 / 预览 / 保存 / 送 GTAB 编辑页）
       settings_page.py   设置页（两个全局开关 + 版本号，改完立即写盘）
       placeholder.py     占位页（目前没有页面在用，留给以后新增页）
 tests/
@@ -98,14 +98,17 @@ tests/
   test_gct_file_ops.py   GCT 页文件操作测试（假 FilePicker：打开 / 保存 / 另存为 / 取消）
   test_hotkeys.py        全局热键测试（F24 注册 + 消息派发）
   test_midi_doc.py       MIDI 测试（SMF 解析 / tempo 换算 / 键位表 / Capo / 排期 / 页面离线）
+  test_midi_to_gtab.py   MIDI→GTAB 转换测试（定弦 / 只留最高 / 把位 / tempo / 重叠 / 回读）
+  test_midi_to_gtab_page.py  MIDI→GTAB 页面构建测试（默认开关 / 示例转换 / 送编辑页）
   test_settings.py       设置测试（默认值 / JSON 往返容错 / 全局 CRC / 保存后重读 / 版本号 / 八度投影）
   preview_gtab_page.py   开发用：单独预览 GTAB 页
   preview_gct_page.py    开发用：单独预览 GCT 编辑页
   preview_gamepad_page.py 开发用：单独预览手柄映射页（PREVIEW_SCORE=gct 看和弦谱）
   preview_midi_page.py   开发用：单独预览 MIDI 映射页
+  preview_midi_to_gtab_page.py 开发用：单独预览 MIDI→GTAB 页（PREVIEW_STATE=keepall 看和弦）
   preview_settings_page.py 开发用：单独预览设置页（PREVIEW_STATE=on 看两个开关都打开的样子）
   preview_replay_wheel.py 开发用：单独预览回放轮盘
-  capture_gtab_screenshot.ps1 开发用：重拍界面截图（DPI 感知）；-Page gtab|gct|gamepad|midi|settings|wheel，-Out 指定文件
+  capture_gtab_screenshot.ps1 开发用：重拍界面截图（DPI 感知）；-Page gtab|gct|gamepad|midi|midi2gtab|settings|wheel，-Out 指定文件
 ```
 
 预览脚本的开关（截图脚本会继承环境变量）：
@@ -115,6 +118,7 @@ tests/
 | `PREVIEW_WIDTH` / `PREVIEW_HEIGHT` | 窗口逻辑尺寸；App 内容宽度是 **1144**（1280 减导航栏 96 与分隔线） |
 | `PREVIEW_SCORE=gtab\|gct` | 手柄页载入单音谱还是和弦谱；gct 时默认存 `docs/gamepad_gct.png` |
 | `PREVIEW_STATE=play` | 手柄页摆成「和弦扫到一半」；GTAB / GCT 页摆成「试听中」；MIDI 页摆成「发送中」（都只摆状态，不播音 / 不发按键） |
+| `PREVIEW_STATE=keepall` | MIDI→GTAB 页关掉「只留最高音」，截图里能看到和弦的全部音 |
 | `PREVIEW_STATE=on` | 设置页把两个开关画成打开的样子（只改控件，不写 `settings.json`） |
 | `PREVIEW_PAGE=4` | 用最后一页的和弦（名字最长）当示例 |
 | `PREVIEW_SCALE=1.6` | 轮盘预览（`-Page wheel`）整体放大，核对和弦名会不会顶出外圈 |
@@ -367,7 +371,8 @@ gct 里**没有音长**，所以和弦试听（`src/ui/chord_preview.py`）用�
   可直接单测（`transpose` 现在就是 Capo 的品位）；
 - **节拍轴**：三条泳道 = 键位表的三行（低 / 中 / 高八度），块上写要按的键
   （灰块 = 超出窗口、会被跳过；打开投影后没有灰块，tooltip 里写「八度投影到 X」），
-  橙色竖线是 tempo 变化；播放时红色游标跟着走，长谱会自动横向跟随；
+  橙色竖线是 tempo 变化；播放时红色游标**按真实时间推进**——开场静音、音符之间的空隙、
+  最后一个音之后的静音收尾都会走，不会只在上一个按键处停住；长谱会自动横向跟随；
 - **权限**：`SendInput` 同样受 UIPI 限制，低权限进程（Agent / 沙盒 / CI）发不进权限更高的游戏。
   页面顶部状态卡会用红字写明「低权限运行」；真机请用 `run.bat` / `run_admin.bat` 启动；
 - **示例**：点「示例 MIDI」优先读 `src/MusicList/midifile/demo.mid`，文件不存在就用内存里的
@@ -378,6 +383,33 @@ gct 里**没有音长**，所以和弦试听（`src/ui/chord_preview.py`）用�
 
 > 与手柄页的区别：手柄页是「谱面 → 虚拟手柄」，MIDI 页是「MIDI → 键盘」，
 > 两条路径共用全局热键（F9 / F10）但互不影响；切页会停掉正在发送的按键。
+
+## MIDI→GTAB 页（MIDI 文件 → 可玩的 .gtab）
+
+![MIDI→GTAB 页](docs/midi_to_gtab_page.png)
+
+把 MIDI 直接排成手柄能弹的 `.gtab`，和「MIDI 映射」（→ 键盘）是两条不同的路径：
+
+- **定弦**：标准 E2 A2 D3 G3 B3 E4，0–24 品，音域 MIDI 40–88（E2–E6）；
+  超出音域的音**跳过并报出数量**（不会静默丢，也不会自动移八度）；
+- **同时起音**：同一个 tick 上按下的多个音，**默认只保留最高的那个**（左栏开关可关）。
+  关掉后全部保留，最多 6 个（一条弦一个），并尽量让整组落在同一页；
+- **打击乐**：MIDI 通道 10（0 基 9，GM 鼓）默认跳过（左栏开关可关），
+  避免鼓点被排成低音或噪音；
+- **把位（页面）优先沿用上一个音**：游戏每页 6 个品（第 1 页 1–6、第 2 页 7–12、
+  第 3 页 13–18、第 4 页 19–24，第 5 页空弦），翻页要推右摇杆、很花时间。
+  转换时先按「离上一页最近」选，再避开还按着的弦 / 同弦同品，最后才按「品离上一手近」
+  选具体位置；开局按游戏默认的第 1 页算——所以 C4 之后的 E4 会走 2 弦 5 品，
+  而不是 1 弦空弦（否则要翻 4 页）；
+- **时间轴**：MIDI 的 tick 按 480 tick/拍重新换算，tempo 变化写成 GTAB 的 Tempo 事件，
+  音长保留；同弦同品真压在一起时把前一个音截到后一个音的起点（GTAB 不允许同键重叠）；
+- **保存 / 送编辑页**：右上「保存 .gtab」直接写文件；「送到 GTAB 编辑页」把结果放进
+  GTAB 编辑页（还没落盘，保存时会走「另存为」），可以继续手工改弦 / 品 / 音长；
+- 左栏统计给出：源音符数、输出数、省略的同时音、超范围跳过、同键截断、
+  翻页次数与摇杆推动次数、用到的页面；右栏预览每个音的拍 / 音长 / 音名 / 弦 / 品 / 页。
+
+> 转换是纯函数（`ui/midi_to_gtab.py` 的 `convert()`），界面只负责选文件 / 显示 / 保存；
+> 规则要改都在模型层，`tests/test_midi_to_gtab.py` 可直接跑。
 
 ## 设置页
 
@@ -438,10 +470,46 @@ rc = 发布候选，改一处版本号即可升到正式版）。窗口/任务�
 .venv\Scripts\python.exe tests\test_gct_file_ops.py
 .venv\Scripts\python.exe tests\test_hotkeys.py
 .venv\Scripts\python.exe tests\test_midi_doc.py
+.venv\Scripts\python.exe tests\test_midi_to_gtab.py
+.venv\Scripts\python.exe tests\test_midi_to_gtab_page.py
 .venv\Scripts\python.exe tests\test_settings.py
 ```
 
-共 214 项（18 / 10 / 14 / 23 / 13 / 11 / 16 / 9 / 30 / 7 / 4 / 29 / 30）。
+共 240 项（18 / 10 / 14 / 23 / 13 / 11 / 16 / 9 / 30 / 7 / 4 / 31 / 15 / 6 / 33）。
+
+## 打包成 exe（可选）
+
+给不想装 Python 的人用。脚本是 `build_release.ps1`（`flet pack` = PyInstaller）：
+
+```powershell
+# 一次性：装打包工具（flet 1.0 的 CLI 是单独的包）
+.venv\Scripts\python.exe -m pip install "flet-cli==1.0.4" pyinstaller
+
+# 单文件 → dist\NTE-Autoguitar.exe；加 -OneDir 出文件夹版（启动更快）
+pwsh -File build_release.ps1
+pwsh -File build_release.ps1 -OneDir
+
+# 启动异常时出带控制台的诊断版（黑窗口里直接看 traceback）
+pwsh -File build_release.ps1 -DebugConsole
+```
+
+实测产物：单文件约 67 MB；`-OneDir` 是 10 MB 的 exe + `_internal\` 目录。
+
+脚本会先跑 13 个测试（`-SkipTests` 跳过），再按 `src/paths.py` 的资源约定把
+`chord.json` / `midi_keys.json` / `MusicList`（示例谱）/ `docs/AkaneRin.ico` 打进包里，
+并带上 `vgamepad` 的 `ViGEmClient.dll`。版本号从 `src/version.py` 读。
+
+打包版的行为差异只有一处：**`settings.json` 写到 `%APPDATA%\NTE-Autoguitar\`**
+（单文件 exe 的资源目录是临时目录，退出即删），源码运行仍写 `src/settings.json`。
+
+**首次启动**会把内置的 Flet 客户端解包到 `%USERPROFILE%\.flet\client\<版本>-<指纹>\`
+（约 200 MB，之后直接复用，所以第一次会慢几秒）。如果这一步被安全软件/权限拦住，
+程序会弹「Unhandled exception in script」；用 `-DebugConsole` 版重跑，黑窗口里会显示
+`PermissionError` 的具体路径。
+
+发 exe 的发布说明里记得写：**手柄页需要用户机安装 ViGEmBus 驱动**；游戏以管理员运行时
+请把 exe 也设为以管理员启动（右键 → 属性 → 兼容性）；PyInstaller 单文件可能被杀软误报，
+介意的话发 `-OneDir` 的文件夹版。
 
 ## 排错
 

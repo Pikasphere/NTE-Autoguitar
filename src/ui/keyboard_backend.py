@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
+from paths import bundle_root
 from ui.midi_doc import MidiDocument, note_name
 
 __all__ = [
@@ -55,7 +56,7 @@ __all__ = [
     "reload_key_table",
 ]
 
-KEY_FILE = Path(__file__).resolve().parents[1] / "midi_keys.json"
+KEY_FILE = bundle_root() / "midi_keys.json"
 
 LEAD_IN = 0.4          # 开场留一点时间（游戏在前台、手离开热键）
 KEY_REPRESS_GAP = 0.04  # 同一个键要再按时，先松开至少这么久（和手柄重拨同理）

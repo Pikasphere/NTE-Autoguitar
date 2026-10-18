@@ -19,6 +19,8 @@ import json
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from paths import settings_path
+
 __all__ = [
     "DEFAULTS",
     "SETTINGS_FILE",
@@ -32,8 +34,9 @@ __all__ = [
     "update_settings",
 ]
 
-#: 设置文件位置：``src/settings.json``（和 ``midi_keys.json`` / ``chord.json`` 同级）。
-SETTINGS_FILE = Path(__file__).resolve().parents[1] / "settings.json"
+#: 设置文件位置：源码运行是 ``src/settings.json``；打包后是
+#: ``%APPDATA%\\NTE-Autoguitar\\settings.json``（单文件 exe 的资源目录退出即删）。
+SETTINGS_FILE = settings_path()
 
 
 @dataclass(frozen=True)
@@ -73,12 +76,16 @@ def load_settings(path: str | Path | None = None) -> AppSettings:
 
 
 def save_settings(settings: AppSettings, path: str | Path | None = None) -> Path:
-    """把设置写盘（紧凑 JSON + 换行）；返回写入的文件路径。"""
+    """把设置写盘（紧凑 JSON + 换行）；返回写入的文件路径。
+
+    打包运行时会写到 ``%APPDATA%\\NTE-Autoguitar``，目录可能还不存在，这里顺手建出来。
+    """
     file = Path(path) if path is not None else SETTINGS_FILE
     payload = {
         "global_event_crc": bool(settings.global_event_crc),
         "midi_project_octave": bool(settings.midi_project_octave),
     }
+    file.parent.mkdir(parents=True, exist_ok=True)
     file.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )

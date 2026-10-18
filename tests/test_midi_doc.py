@@ -39,6 +39,7 @@ from ui.midi_doc import (  # noqa: E402
     note_name,
 )
 from ui.pages.midi_page import MidiPage  # noqa: E402
+from ui.pages import midi_page as midi_page_mod  # noqa: E402
 from ui import settings as settings_mod  # noqa: E402
 
 # 测试固定跑「默认设置」：用户本机开着八度投影时，这里的「跳过」断言也必须成立
@@ -64,6 +65,45 @@ class FakePage:
 
     def update(self) -> None:
         self.updates += 1
+
+
+class _SilentBackend:
+    """测试用：只记录按下/松开，不真的发按键（会打进当前窗口）。"""
+
+    def __init__(self) -> None:
+        self.pressed: list[str] = []
+        self.released: list[str] = []
+
+    def press(self, key: str) -> None:
+        self.pressed.append(key)
+
+    def release(self, key: str) -> None:
+        self.released.append(key)
+
+    def release_all(self) -> None:
+        self.released.extend(self.pressed)
+
+
+def _play_view(doc: MidiDocument) -> MidiPage:
+    """构造一个可播放、但不碰真实键盘/滚动的页面。"""
+    view = MidiPage(FakePage())
+    view._set_doc(doc)
+    view.backend = _SilentBackend()
+    view._timeline_scroll = None  # 离线没有真控件，别等滚动动画
+    return view
+
+
+def _spy_playhead(view: MidiPage) -> list[float]:
+    """记录每次设置红线用的谱面秒数（不改变原有行为）。"""
+    seen: list[float] = []
+    original = view._set_playhead_seconds
+
+    def spy(seconds: float) -> None:
+        seen.append(seconds)
+        original(seconds)
+
+    view._set_playhead_seconds = spy  # type: ignore[method-assign]
+    return seen
 
 
 def _smf(track_body: bytes, division: int = TICKS, fmt: int = 0, tracks: int = 1) -> bytes:
@@ -446,6 +486,68 @@ def test_page_play_with_fake_page_reports_skipped_and_stops() -> None:
     assert view._playing is False
     assert view._playhead.visible is False
     assert "已停止" in view._progress.value
+
+
+def test_playhead_advances_through_silence_before_first_note() -> None:
+    """用户报的 bug：第一个音之前没有按键，红线也必须按时间走。"""
+    # 240 BPM → 1 拍 0.25s；第一个音在第 1 拍（0.25s），前面是静音
+    doc = _doc([(480, 720, 60)], tempos=[TempoMark(0, 250_000)])
+    view = _play_view(doc)
+    view._playing = True
+    view._play_token += 1
+    actions = build_key_schedule(doc, lead_in=0.0).actions
+    assert actions[0].time > 0.1, "构造前提：第一个按键之前确实有一段静音"
+    seen = _spy_playhead(view)
+
+    async def scenario() -> None:
+        task = asyncio.create_task(view._play_loop(actions, view._play_token))
+        await asyncio.sleep(0.12)
+        mid = max(seen, default=0.0)
+        assert mid > 0.02, f"静音区间红线应该在动（0.12s 时 max={mid:.3f}）"
+        assert mid < actions[0].time, "红线不能提前跑到第一个音"
+        await asyncio.wait_for(task, timeout=3.0)
+
+    old_lead_in = midi_page_mod.LEAD_IN
+    midi_page_mod.LEAD_IN = 0.0
+    try:
+        asyncio.run(scenario())
+    finally:
+        midi_page_mod.LEAD_IN = old_lead_in
+
+    assert view._playing is False
+    assert view._playhead.visible is False, "播完后红线隐藏，但已经走到过曲尾"
+
+
+def test_playhead_reaches_tail_after_last_note() -> None:
+    """最后一个音之后（静音收尾）红线也要推进到 duration，别停在上一个按键。"""
+    doc = MidiDocument(
+        format=0,
+        tracks=1,
+        division=TICKS,
+        notes=[NoteEvent(0, 120, 60)],
+        tempos=[TempoMark(0, 250_000)],
+        end_tick=720,
+    )
+    assert abs(doc.duration_seconds - 0.375) < 1e-9
+    view = _play_view(doc)
+    view._playing = True
+    view._play_token += 1
+    actions = build_key_schedule(doc, lead_in=0.0).actions
+    seen = _spy_playhead(view)
+
+    old_lead_in = midi_page_mod.LEAD_IN
+    midi_page_mod.LEAD_IN = 0.0
+    try:
+        asyncio.run(
+            asyncio.wait_for(view._play_loop(actions, view._play_token), timeout=3.0)
+        )
+    finally:
+        midi_page_mod.LEAD_IN = old_lead_in
+
+    assert view._playing is False
+    assert max(seen) >= doc.duration_seconds - 0.06, "红线要走到曲尾"
+    assert max(seen) > actions[-1].time, "最后一个按键之后还在推进"
+    assert view._playhead.visible is False
 
 
 def test_page_load_bad_file_keeps_current_document() -> None:

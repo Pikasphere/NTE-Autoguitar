@@ -28,6 +28,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
+from paths import bundle_root
+
 __all__ = [
     "CHORD_FILE",
     "MAX_FRET",
@@ -66,7 +68,7 @@ MUTED_TEXT = "x"
 #: 指法允许的最大品（和 gtab 的 max_fret 默认值一致；超出的当填写错误）
 MAX_FRET = 24
 
-CHORD_FILE = Path(__file__).resolve().parents[1] / "chord.json"
+CHORD_FILE = bundle_root() / "chord.json"
 
 
 class ChordError(ValueError):

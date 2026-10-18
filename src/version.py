@@ -9,4 +9,4 @@ from __future__ import annotations
 __all__ = ["VERSION"]
 
 #: ``1.0.0-rc1`` = 1.0.0 的发布候选（release candidate）。正式发布时去掉 ``-rc1``。
-VERSION = "1.0.0-rc1"
+VERSION = "1.0.0-rc2"

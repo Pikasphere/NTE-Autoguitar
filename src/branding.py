@@ -7,9 +7,10 @@ Flet 的 ``page.window.icon`` 在 Windows 上读一个 ``.ico`` 文件路径；
 
 from __future__ import annotations
 
-from pathlib import Path
+from paths import project_root
 
 __all__ = ["ICON_PATH"]
 
-#: 窗口 / 任务栏图标。相对项目根定位，不依赖启动时的工作目录。
-ICON_PATH = Path(__file__).resolve().parents[1] / "docs" / "AkaneRin.ico"
+#: 窗口 / 任务栏图标。源码运行在仓库根的 ``docs/``；打包后 ``--add-data`` 放进
+#: 资源根的 ``docs/``（``project_root()`` 两种模式都指向正确的那一层）。
+ICON_PATH = project_root() / "docs" / "AkaneRin.ico"
