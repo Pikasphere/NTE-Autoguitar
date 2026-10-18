@@ -32,6 +32,7 @@ import flet as ft
 
 from gtab import EV_TEMPO
 from ui import audio_preview
+from ui.components import BEATS_PER_BAR, LANE_HEIGHT, PX_PER_BEAT, RULER_HEIGHT
 from ui.gtab_doc import (
     DEFAULT_NOTE_DURATION_BEATS,
     EVENT_LABELS,
@@ -54,11 +55,8 @@ _BEAT_FILTER = r"[0-9.]*"
 
 _MUTED = ft.Colors.ON_SURFACE_VARIANT
 
-# 节拍轴外观
-PX_PER_BEAT = 120
-LANE_HEIGHT = 22
-RULER_HEIGHT = 24
-BEATS_PER_BAR = 4
+# 节拍轴外观（PX_PER_BEAT / LANE_HEIGHT / RULER_HEIGHT / BEATS_PER_BAR）
+# 从 ui.components 导入：GTAB 和 GCT 两个编辑页共用同一套刻度。
 
 STRING_COLORS = [
     ft.Colors.INDIGO_400,

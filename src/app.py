@@ -10,6 +10,7 @@ from __future__ import annotations
 import flet as ft
 
 from ui.pages.gamepad_page import GamepadPage
+from ui.pages.gct_page import GctPage
 from ui.pages.gtab_page import GtabPage
 from ui.pages.placeholder import PlaceholderPage
 
@@ -37,10 +38,12 @@ def main(page: ft.Page) -> None:
     page.window.min_height = WINDOW_MIN_HEIGHT
 
     gtab_page = GtabPage(page)
+    gct_page = GctPage(page)
     gamepad_page = GamepadPage(page)
 
     entries: list[tuple[str, object, ft.Control]] = [
         ("GTAB 编辑", ft.Icons.MUSIC_NOTE, gtab_page.build()),
+        ("GCT 编辑", ft.Icons.LIBRARY_MUSIC, gct_page.build()),
         ("手柄测试", ft.Icons.SPORTS_ESPORTS, gamepad_page.build()),
         (
             "MIDI 转换",
@@ -72,13 +75,19 @@ def main(page: ft.Page) -> None:
     def _on_select(event) -> None:
         index = event.control.selected_index or 0
         # 只有停在本页时才注册全局热键 F9/F10；切走就注销，避免抢占游戏按键
-        gamepad_page.set_active(index == 1)
-        if index != 1:
+        gamepad_page.set_active(index == 2)
+        if index != 2:
             # 离开手柄页时停止回放，避免虚拟手柄一直按着
             gamepad_page.stop()
         if index != 0:
             # 离开 GTAB 页时停掉试听，避免音频在后台继续响
             gtab_page.stop_preview()
+        if index != 1:
+            # 离开 GCT 页时同样停掉试听（两页共用一个 winsound 通道）
+            gct_page.stop_preview()
+        if index == 1:
+            # 每次回到 GCT 页都重读 chord.json：外面改了指法/和弦名不用重启
+            gct_page.reload_chords()
         body.content = entries[index][2]
         page.update()
 

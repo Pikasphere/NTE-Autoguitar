@@ -3,13 +3,16 @@
 # 用法（在项目根目录）：
 #   pwsh -File tests/capture_gtab_screenshot.ps1                 # GTAB 页 → docs/gtab_page.png
 #   pwsh -File tests/capture_gtab_screenshot.ps1 -Page gamepad   # 手柄页 → docs/gamepad_page.png
+#   pwsh -File tests/capture_gtab_screenshot.ps1 -Page gct       # GCT 编辑页 → docs/gct_page.png
+#   $env:PREVIEW_STATE='play'; pwsh -File tests/capture_gtab_screenshot.ps1 -Page gct
+#                                                              # → docs/gct_preview_playback.png（试听中）
 #   pwsh -File tests/capture_gtab_screenshot.ps1 -Page wheel     # 回放轮盘 → docs/replay_wheel.png
 #   $env:PREVIEW_SCORE='gct'; $env:PREVIEW_SCALE='1.6'  → docs/replay_wheel_gct.png（放大核对）
 #
 # 环境变量（预览脚本自己的开关，由这里继承给 pythonw）：
 #   PREVIEW_WIDTH / PREVIEW_HEIGHT  窗口尺寸；App 真实内容宽度是 1144
 #   PREVIEW_SCORE=gtab|gct          手柄页载入哪种谱面；gct 时默认存 docs/gamepad_gct.png
-#   PREVIEW_STATE=play              手柄页摆成「和弦扫到一半」/ GTAB 页摆成「试听中」
+#   PREVIEW_STATE=play              手柄页摆成「和弦扫到一半」/ GTAB、GCT 页摆成「试听中」
 #   PREVIEW_PAGE=4                  用第 4 页和弦（Cmaj9 / Am7/G，名字最长）当示例
 #   PREVIEW_SCALE=1.6               轮盘预览整体放大（配合 -Page wheel 看和弦名布局）
 #   -Out docs/xxx.png               自定义输出文件（不会覆盖默认那张）
@@ -22,7 +25,7 @@
 # 会把桌面图标/任务栏截进来）；Win11 的圆角会透明露底，所以截图前先用
 # DwmSetWindowAttribute 关掉圆角，再内缩 2px 去掉 1px 透明边框。
 param(
-    [ValidateSet('gtab', 'gamepad', 'wheel')]
+    [ValidateSet('gtab', 'gct', 'gamepad', 'wheel')]
     [string]$Page = 'gtab',
     [string]$Out = ''
 )
@@ -50,6 +53,16 @@ if ($Page -eq 'gamepad') {
         $outPng = 'docs\replay_wheel_gct.png'
     } else {
         $outPng = 'docs\replay_wheel.png'
+    }
+} elseif ($Page -eq 'gct') {
+    $title = 'GCT 页面预览'
+    $previewScript = 'tests\preview_gct_page.py'
+    # PREVIEW_STATE=play：摆成「试听中」（游标 + 进度），另存 docs/gct_preview_playback.png，
+    # 别把待机那张覆盖成播放态（和手柄页 gct 待机/回放分开存是一个道理）
+    if ($env:PREVIEW_STATE -eq 'play') {
+        $outPng = 'docs\gct_preview_playback.png'
+    } else {
+        $outPng = 'docs\gct_page.png'
     }
 } else {
     $title = 'GTAB 页面预览'

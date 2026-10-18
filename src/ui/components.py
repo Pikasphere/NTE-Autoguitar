@@ -4,9 +4,23 @@ from __future__ import annotations
 
 import flet as ft
 
-__all__ = ["card", "MUTED"]
+__all__ = [
+    "card",
+    "MUTED",
+    "PX_PER_BEAT",
+    "LANE_HEIGHT",
+    "RULER_HEIGHT",
+    "BEATS_PER_BAR",
+]
 
 MUTED = ft.Colors.ON_SURFACE_VARIANT
+
+# 节拍轴外观。GTAB 编辑页和 GCT 编辑页共用这几个数：
+# 两页的刻度、行高、每小节拍数必须一致，否则同一个谱在两边看起来「对不上」。
+PX_PER_BEAT = 120
+LANE_HEIGHT = 22
+RULER_HEIGHT = 24
+BEATS_PER_BAR = 4
 
 
 def card(title: str, body: ft.Control) -> ft.Control:

@@ -23,10 +23,12 @@ __all__ = [
     "LEAD_IN_SECONDS",
     "SAMPLE_RATE",
     "STRING_BASE_FREQS",
+    "TAIL_SECONDS",
     "fret_frequency",
     "note_timeline",
     "play_wav",
     "preview_seconds",
+    "render_notes",
     "render_wav",
     "stop_playback",
     "wav_duration",
@@ -94,16 +96,23 @@ def _write_wav(samples: array, sample_rate: int) -> bytes:
     return buffer.getvalue()
 
 
-def render_wav(doc: GtabDocument, sample_rate: int = SAMPLE_RATE) -> bytes:
-    """把文档渲染成 16-bit 单声道 WAV 字节。没有音符时返回一小段静音。"""
+def render_notes(
+    notes: list[tuple[float, float, int, int]],
+    seconds: float,
+    sample_rate: int = SAMPLE_RATE,
+) -> bytes:
+    """把 ``(start_s, end_s, 弦, 品)`` 列表渲染成 16-bit 单声道 WAV。
+
+    gtab 页（音符）和 GCT 页（和弦扫弦/拨奏）共用这一个合成器，
+    两个页面只是喂进来的时间轴不同。
+    """
     sample_rate = max(8000, int(sample_rate))
-    total = int(preview_seconds(doc) * sample_rate)
-    total = max(total, 1)
+    total = max(1, int(max(0.0, float(seconds)) * sample_rate))
 
     # 用 float 混音，最后统一归一化，避免多个音叠加时溢出
     mix = array("f", [0.0]) * total
 
-    for start_s, end_s, string, fret in note_timeline(doc):
+    for start_s, end_s, string, fret in notes:
         start = int((start_s + LEAD_IN_SECONDS) * sample_rate)
         if start >= total:
             continue
@@ -137,6 +146,11 @@ def render_wav(doc: GtabDocument, sample_rate: int = SAMPLE_RATE) -> bytes:
     for value in mix:
         pcm.append(int(max(-1.0, min(1.0, value * scale)) * 32767))
     return _write_wav(pcm, sample_rate)
+
+
+def render_wav(doc: GtabDocument, sample_rate: int = SAMPLE_RATE) -> bytes:
+    """把 gtab 文档渲染成 16-bit 单声道 WAV 字节。没有音符时返回一小段静音。"""
+    return render_notes(note_timeline(doc), preview_seconds(doc), sample_rate)
 
 
 def wav_duration(blob: bytes) -> float:

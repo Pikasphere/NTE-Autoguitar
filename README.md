@@ -1,6 +1,6 @@
 # NTE Autoguitar
 
-基于 [Flet](https://flet.dev) 的吉他谱工具。目前有两个页面：**GTAB 编辑**（读取 / 编辑 / 写回 `.gtab` 文件，含试听）和**手柄测试**（`.gtab` / `.gct` 谱面 → 虚拟手柄的可行性与时序验证）。
+基于 [Flet](https://flet.dev) 的吉他谱工具。目前有三个可用页面：**GTAB 编辑**（读取 / 编辑 / 写回 `.gtab` 文件，含试听）、**GCT 编辑**（和弦谱的读取 / 编辑 / 写回，含和弦指法核对）和**手柄测试**（`.gtab` / `.gct` 谱面 → 虚拟手柄的可行性与时序验证）。
 
 鼠标弹奏在游戏里不稳定（时序不可控、也容易丢音），所以本项目舍弃了键鼠方案，
 改用虚拟手柄（Xbox 360 控制器）来触发游戏里的音符。
@@ -49,12 +49,13 @@ src/
   example.py             用 GtabWriter 生成示例谱 demo.gtab 的小脚本
   gtab.py                gtab 二进制格式的底层读写
   gct.py                 gct（和弦谱）二进制格式的底层读写
-  chord.json             24 个和弦名（顺序 = 手柄上的位置，见下）
+  chord.json             24 个和弦名（顺序 = 手柄上的位置）+ CHORDS_MAPPINGS 指法表
   ui/
     gtab_doc.py          gtab 文档模型：解析 / 校验 / 序列化（无界面依赖）
     gct_doc.py           gct 文档模型：和弦事件 / 和弦表 / Tempo（无界面依赖）
-    chords.py            和弦名 → 第几页 + 第几个方向（4 页 × 6 方向）
-    audio_preview.py     试听合成：文档 → 16-bit WAV（只用标准库）
+    chords.py            和弦名 → 第几页 + 第几个方向；指法表（-1 = 不发声，界面显示 x）
+    audio_preview.py     试听合成：音符 → 16-bit WAV（只用标准库）
+    chord_preview.py     和弦试听：gct 事件 → 扫弦/拨奏音符 → WAV（复用上面的合成器）
     gamepad_backend.py   虚拟手柄封装 + 谱面 → 按键排期（纯函数可测）
     gct_backend.py       和弦谱 → 多根弦的扫弦/拨奏排期（复用同一套时序）
     replay_view.py       手柄页左侧的「回放轮盘」：摇杆方向（品/和弦）+ 六根弦
@@ -62,22 +63,26 @@ src/
     components.py        跨页面复用的小控件
     pages/
       gtab_page.py       GTAB 编辑页
+      gct_page.py        GCT 编辑页（节拍轴 / 和弦事件 / Tempo / 和弦表）
       gamepad_page.py    手柄测试页（回放 + 轮盘 + 时序）
       placeholder.py     占位页
 tests/
   test_gtab_doc.py       模型层测试（含音长 / 自动 NoteOff / 试听时间轴）
   test_gtab_page.py      页面构建测试（音符视图、音长编辑、孤立 NoteOff）
-  test_audio_preview.py  试听合成测试（频率 / WAV / BPM / Tempo）
+  test_audio_preview.py  试听合成测试（频率 / WAV / BPM / Tempo / 和弦弦序）
   test_gamepad_mapping.py  谱面 → 按键排期测试
   test_replay_view.py    回放轮盘测试（扇区映射 / 状态推进 / 回放接线）
   test_gct_doc.py        gct 格式测试（读写往返 / CRC / Tempo / 缺 End）
   test_gct_mapping.py    和弦表 + gct → 扫弦排期测试
   test_gct_page.py       手柄页 gct 回放测试（载入 / 计数 / 上扫顺序 / 复位）
+  test_gct_editor.py     GCT 编辑页 + chord.json 指法表测试（-1 → x / 事件编辑 / 节拍轴 / 试听）
+  test_gct_file_ops.py   GCT 页文件操作测试（假 FilePicker：打开 / 保存 / 另存为 / 取消）
   test_hotkeys.py        全局热键测试（F24 注册 + 消息派发）
   preview_gtab_page.py   开发用：单独预览 GTAB 页
+  preview_gct_page.py    开发用：单独预览 GCT 编辑页
   preview_gamepad_page.py 开发用：单独预览手柄页（PREVIEW_SCORE=gct 看和弦谱）
   preview_replay_wheel.py 开发用：单独预览回放轮盘
-  capture_gtab_screenshot.ps1 开发用：重拍界面截图（DPI 感知）；-Page gamepad|wheel，-Out 指定文件
+  capture_gtab_screenshot.ps1 开发用：重拍界面截图（DPI 感知）；-Page gtab|gct|gamepad|wheel，-Out 指定文件
 ```
 
 预览脚本的开关（截图脚本会继承环境变量）：
@@ -137,8 +142,8 @@ GTAB 编辑页的音符区**一行就是一个音**，不再把 NoteOn / NoteOff
 
 ## 试听（调试用）
 
-GTAB 编辑页工具栏的「试听 / 停止」按**当前写入的内容**合成并播放音乐，用于核对
-音高、节奏、音长和 BPM 是否符合预期：
+GTAB 编辑页工具栏、GCT 编辑页「和弦事件」标题栏的「试听 / 停止」按**当前写入的内容**
+合成并播放音乐，用于核对音高、节奏、音长和 BPM 是否符合预期：
 
 - 合成只用标准库：标准定弦 `E2=82.41 / A2=110 / D3=146.83 / G3=196 / B3=246.94 / E4=329.63`，
   0 品 = 空弦，每品 +1 半音；基频加少量谐波 + 指数衰减，混音后归一化成
@@ -154,6 +159,21 @@ GTAB 编辑页工具栏的「试听 / 停止」按**当前写入的内容**合�
   谐波 / 衰减常量即可。
 
 ![试听时的播放游标](docs/gtab_preview_playback.png)
+
+### 和弦谱的试听（GCT 页）
+
+gct 里**没有音长**，所以和弦试听（`src/ui/chord_preview.py`）用一套自己的规则：
+
+- 音高取自 `chord.json` 的 `CHORDS_MAPPINGS`（1 弦 → 6 弦、`-1` = 不发声）；
+- **扫弦**：六根弦依次响，每根隔 `STRUM_GAP=20ms`；**下扫 6 → 1 弦、上扫 1 → 6 弦**
+  （和游戏里扫弦方向一致）；**单弦拨奏**只发那一根；`Set`（只换指位）不出声；
+- 一个和弦响多久由 `RING_SECONDS=0.8s` 定（文件里没有音长），相邻和弦会自然叠一点；
+- 时间换算走 `gct_doc.tick_to_seconds`（gct 的 Tempo 事件是 `0x04`，BPM 与 Tempo 都算进去）；
+- 表里**没有指法**的和弦会被跳过，点试听时会用提示条报出来；一个能响的都没有则不播。
+  这也是「指法没填」会影响试听、但**不影响手柄回放位置**的原因；
+- 试听时节拍轴上同样有红色游标 + 「试听中 x/y」进度，停止 / 载入新谱 / 切页都会停掉。
+
+![GCT 页试听中的游标](docs/gct_preview_playback.png)
 
 > 实现注意：WAV 合成在后台线程（`page.run_thread`），进度/游标刷新由页面事件循环里的
 > async ticker（`page.run_task`）推进。**不要在后台线程里直接 `page.update()`**——
@@ -225,6 +245,36 @@ GTAB 编辑页工具栏的「试听 / 停止」按**当前写入的内容**合�
 `Schedule(actions, conflicts, hints)`（`conflicts` 是可能弹错的问题，
 `hints` 是预期处理），可以直接单测。
 
+## GCT 编辑页
+
+![GCT 编辑页](docs/gct_page.png)
+
+左边是头部参数和和弦表，右边上面是节拍轴、下面是和弦事件列表：
+
+- **头部参数**：弦数、BPM（写进 `default_tempo_us`）、`事件 CRC` 开关（含义同 GTAB 页的同名开关）；
+  事件位置统一用**拍**，时间基准固定 480 tick/拍（和 GTAB 页一样，界面不暴露）；
+- **和弦表**：`src/chord.json` 里的 24 个名字按「页 × 方向」排开（第 1 个 = 第 1 页正上方，
+  顺时针，4 页 × 6 方向），后面跟 `CHORDS_MAPPINGS` 里的 **6 弦指法**：
+  按 **1 弦 → 6 弦** 排列，`-1`（这根弦不发声）显示成 **`x`**，没填指法的显示「未定义」。
+  **指法只用于显示/核对，回放位置仍由名字顺序决定**——改指法不会影响手柄排期；
+- **节拍轴**：和弦事件按拍画在时间轴上，刻度和 GTAB 页共用一套（`ui/components.py` 的
+  `PX_PER_BEAT=120`、每小节 4 拍）；三条泳道分别是**扫弦 / 拨弦 / 指位**，同一拍上
+  不同类型的事件不会互相压住。下扫（靛蓝）、上扫（青绿）、拨弦（琥珀）、指位（灰）颜色不同，
+  块上写和弦名（拨弦带弦号），悬停看方向 / 弦 / 第几拍；**Tempo 是贯穿泳道的橙色竖线**
+  （只标位置，位置本身不受它影响）。改拍、换方向、换和弦时轴立即重画，但**不重建事件行**，
+  所以正在输入的拍号框不会失焦；
+- **试听**：和弦事件标题栏的「试听 / 停止」按当前谱面合成播放（扫弦六根弦依次响、
+  上扫反着来、单弦拨奏只发一根，音高取 `chord.json` 的指法），节拍轴上跟着走一条红色游标；
+  没有指法的和弦会跳过并提示。合成规则见下面「和弦谱的试听」；
+- **和弦事件**：一条 = 一个 `Strum`（扫弦，可选下扫 / 上扫）/ `Pluck`（单弦拨奏，选 1–6 弦）/
+  `Set`（只切指位）；行内可以改拍、类型、和弦，指法列跟着实时更新；
+- **Tempo / End**：Tempo 行可以改拍和 BPM（只影响回放速度，不改事件位置）；
+  End 只读，保存时自动补在最后（幂等）；
+- 保存时按拍排序 + 自动补 End，并回读一遍做严格校验；「另存为」默认 `untitled.gct`。
+
+`chord.json` 是**运行时读取**的：改完 json 不用重启，点工具栏「重载和弦表」
+或切回本页（导航切换时自动重读）即可；打开文件前也会重读一次。
+
 ## gct 和弦谱（读 + 回放）
 
 `.gct` 是**和弦谱**：事件只说「什么时候弹哪个和弦」，没有 NoteOn/NoteOff、也没有音长。
@@ -251,7 +301,8 @@ GTAB 编辑页工具栏的「试听 / 停止」按**当前写入的内容**合�
 - 打开方式：手柄页「打开谱面」按扩展名自动分派 `.gtab` / `.gct`；「示例 gct」在内存里
   生成一张 8 个和弦的示例（走第 1 / 2 / 4 页，含一次上扫和一个 Set），
   如果 `src/MusicList/gctfile/demo.gct` 存在则优先读它。
-- **gct 目前只能读和回放，没有编辑页**；和弦谱的时序规则仍以
+- 编辑用「GCT 编辑」页（见上）：打开 / 修改 / 保存 `.gct`，左侧和弦表可以核对
+  `chord.json` 里的指法（`-1` 显示成 `x`）；和弦谱的时序规则仍以
   `tests/test_gct_mapping.py` 为准（那是可执行文档）。
 
 ![gct 和弦谱待机（第 1 页）](docs/gamepad_gct.png)
@@ -292,10 +343,12 @@ GTAB 编辑页工具栏的「试听 / 停止」按**当前写入的内容**合�
 .venv\Scripts\python.exe tests\test_gct_doc.py
 .venv\Scripts\python.exe tests\test_gct_mapping.py
 .venv\Scripts\python.exe tests\test_gct_page.py
+.venv\Scripts\python.exe tests\test_gct_editor.py
+.venv\Scripts\python.exe tests\test_gct_file_ops.py
 .venv\Scripts\python.exe tests\test_hotkeys.py
 ```
 
-共 110 项（18 / 10 / 7 / 23 / 13 / 11 / 16 / 8 / 4）。
+共 155 项（18 / 10 / 14 / 23 / 13 / 11 / 16 / 8 / 31 / 7 / 4）。
 
 ## 排错
 
@@ -340,3 +393,6 @@ Get-WinEvent -FilterHashtable @{LogName='Application'; Id=1000; StartTime=(Get-D
 MIT，见 [LICENSE](LICENSE)。
 
 
+## 为什么用Flet
+
+好看，我喜欢
