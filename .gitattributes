@@ -1,0 +1,5 @@
+# 统一换行：仓库里一律 LF，Windows 批处理/PS 脚本保留 CRLF
+* text=auto eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.png binary

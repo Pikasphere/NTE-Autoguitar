@@ -1,0 +1,10 @@
+{
+    "CHORD_NAMES" : [
+        "G", "Am", "Bm", "C", "D", "Em",
+        "Cmaj7", "C7", "Cm7", "G7",
+        "C9", "Cm9", "C5", "D5", "G5", "A5",
+        "Cmaj9", "Cadd9",
+        "G/B", "Am7/G", "D/F#", "F/A",
+        "A", "Dm"
+    ]
+}
